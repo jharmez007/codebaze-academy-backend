@@ -1,7 +1,7 @@
 from flask import Flask
 from .config import Config
 from .extensions import db, migrate, jwt
-from .routes import auth, student, admin, courses
+from .routes import auth, student, admin, courses, enrollments, progress, comments
 
 def create_app():
     app = Flask(__name__)
@@ -13,6 +13,9 @@ def create_app():
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(courses.bp, url_prefix='/courses')
+    app.register_blueprint(enrollments.bp, url_prefix="/enrollments")
+    app.register_blueprint(progress.bp, url_prefix="/progress")
+    app.register_blueprint(comments.bp, url_prefix="/comments")
     # app.register_blueprint(student.bp, url_prefix='/student')
     # app.register_blueprint(admin.bp, url_prefix='/admin')
 

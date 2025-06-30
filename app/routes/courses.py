@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from app.extensions import db
 from app.models import Course
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from utils.auth import role_required
+from app.utils.auth import role_required
 
 bp = Blueprint("courses", __name__)
 

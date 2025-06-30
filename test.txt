@@ -1,0 +1,19 @@
+# Login for admin
+{
+  "email": "admin@example.com",
+  "password": "admin123"
+}
+
+# Registration for admin
+{
+  "full_name": "Sunday Goodnews",
+  "email": "admin@example.com",
+  "password": "admin123",
+  "role": "admin"
+}
+
+# Login for Student
+{
+  "email": "sunday@example.com",
+  "password": "test123"
+}

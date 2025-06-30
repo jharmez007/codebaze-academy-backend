@@ -8,6 +8,7 @@ class Lesson(db.Model):
     video_url = db.Column(db.String(255), nullable=False)
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reference_link = db.Column(db.String(500), nullable=True)
 
     course = db.relationship('Course', back_populates='lessons')
     progress = db.relationship('Progress', back_populates='lesson')
