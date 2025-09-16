@@ -7,6 +7,8 @@ class Enrollment(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
     enrolled_at = db.Column(db.DateTime, default=datetime.utcnow)
+    progress = db.Column(db.Float, default=0.0)  # percentage
+    status = db.Column(db.String(50), default="active")
 
     student = db.relationship('User', back_populates='enrollments')
     course = db.relationship('Course', back_populates='enrollments')

@@ -3,6 +3,7 @@ from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
 class Course(db.Model):
+    __tablename__ = "course"
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
     description = db.Column(db.Text, nullable=False)
@@ -14,6 +15,29 @@ class Course(db.Model):
     enrollments = db.relationship('Enrollment', back_populates='course')
     resources = db.relationship('Resource', back_populates='course')
     comments = db.relationship('Comment', back_populates='course')
+
+    subcategories = db.relationship(
+        "SubCategory",
+        backref="course",
+        cascade="all, delete-orphan"
+    )
+
+class SubCategory(db.Model):
+    __tablename__ = "subcategories"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+
+    course_id = db.Column(
+        db.Integer,
+        db.ForeignKey("course.id"),
+        nullable=False
+    )
+
+    lessons = db.relationship(
+        "Lesson",
+        backref="subcategory",
+        cascade="all, delete-orphan"
+    )
     
 class Resource(db.Model):
     id = db.Column(db.Integer, primary_key=True)

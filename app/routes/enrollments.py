@@ -7,26 +7,54 @@ bp = Blueprint("enrollment", __name__)
 
 # Enroll in a course
 @bp.route("/<int:course_id>", methods=["POST"])
-@jwt_required()
+@jwt_required(optional=True)  # allow both logged in + guest users
 def enroll(course_id):
     user_id = get_jwt_identity()
-
-    # Check if course exists
     course = Course.query.get_or_404(course_id)
 
-    # Check if already enrolled
-    existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
-    if existing:
-        return jsonify({"message": "Already enrolled"}), 409
+    if user_id:  
+        # Logged-in user
+        existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
+        if existing:
+            return jsonify({"message": "Already enrolled"}), 409
 
-    enrollment = Enrollment(
-        user_id=user_id,
-        course_id=course_id
-    )
+        enrollment = Enrollment(
+            user_id=user_id,
+            course_id=course_id,
+            progress=0.0,
+            status="active"
+        )
+    else:
+        # Guest user – collect email
+        data = request.get_json()
+        if not data or "email" not in data:
+            return jsonify({"error": "Email required for guest enrollment"}), 400
+        
+        email = data["email"]
+
+        existing = Enrollment.query.filter_by(email=email, course_id=course_id).first()
+        if existing:
+            return jsonify({"message": "Already enrolled with this email"}), 409
+
+        enrollment = Enrollment(
+            course_id=course_id,
+            progress=0.0,
+            status="pending"  # guest enrollments stay pending until account created
+        )
+
     db.session.add(enrollment)
     db.session.commit()
 
-    return jsonify({"message": "Enrollment successful"}), 201
+    return jsonify({
+        "message": "Enrollment successful",
+        "course_id": course.id,
+        "course_title": course.title,
+        "user_id": user_id,
+        "email": enrollment.email,
+        "progress": enrollment.progress,
+        "status": enrollment.status,
+        "enrolled_at": enrollment.enrolled_at.isoformat()
+    }), 201
 
 # List user's enrolled courses
 @bp.route("/", methods=["GET"])

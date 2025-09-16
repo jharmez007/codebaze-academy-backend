@@ -1,8 +1,23 @@
 from flask import Blueprint, request, jsonify
 from app.extensions import db
-from app.models import Course
+from werkzeug.utils import secure_filename
+from app.models import Course, Lesson
+from app.models.course import SubCategory
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.auth import role_required
+import json
+import os
+
+UPLOAD_VIDEO_FOLDER = os.path.join("static", "uploads", "videos")
+UPLOAD_DOC_FOLDER = os.path.join("static", "uploads", "docs")
+# Make sure the folders exist
+os.makedirs(UPLOAD_VIDEO_FOLDER, exist_ok=True)
+os.makedirs(UPLOAD_DOC_FOLDER, exist_ok=True)
+ALLOWED_VIDEO_EXT = {"mp4", "mov", "avi", "mkv", "mp3"}
+ALLOWED_DOC_EXT = {"pdf", "docx", "pptx"}
+
+def allowed_file(filename, allowed_ext):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed_ext
 
 bp = Blueprint("courses", __name__)
 
@@ -23,40 +38,148 @@ def list_courses():
 
 # Get details of a single course
 @bp.route("/<int:course_id>", methods=["GET"])
+@jwt_required(optional=True)  # allow public view
 def get_course(course_id):
     course = Course.query.get_or_404(course_id)
-    return jsonify({
+
+    response = {
         "id": course.id,
         "title": course.title,
         "description": course.description,
         "price": course.price,
         "is_published": course.is_published,
-        "created_at": course.created_at.isoformat()
-    })
+        "created_at": course.created_at.isoformat(),
+        "subcategories": []
+    }
+
+    for sub in course.subcategories:
+        sub_data = {"id": sub.id, "name": sub.name, "lessons": []}
+
+        for lesson in sub.lessons:
+            lesson_data = {"id": lesson.id, "title": lesson.title}
+            sub_data["lessons"].append(lesson_data)
+
+        response["subcategories"].append(sub_data)
+
+    return jsonify(response)
 
 # Create a course (admin only)
 @bp.route("/", methods=["POST"])
 @jwt_required()
 @role_required("admin")
 def create_course():
-    data = request.get_json()
+    # Expect JSON metadata in `form` field
+    data = request.form.get("data")
+    if not data:
+        return jsonify({"error": "Missing course data"}), 400
+    
+    try:
+        data = json.loads(data)
+    except:
+        # print("RAW DATA:", request.form.get("data"))
+        return jsonify({"error": "Invalid JSON format"}), 400
+
     title = data.get("title")
     description = data.get("description")
     price = data.get("price")
+    subcategories_data = data.get("subcategories", [])
+    
 
     if not all([title, description, price]):
         return jsonify({"error": "Missing fields"}), 400
 
-    course = Course(
-        title=title,
-        description=description,
-        price=price,
-        is_published=True
-    )
+    course = Course(title=title, description=description, price=price, is_published=True)
+
+    # Build subcategories & lessons
+    for i, sub in enumerate(subcategories_data):
+        subcategory = SubCategory(name=sub["name"], course=course)
+
+        for j, lesson_data in enumerate(sub.get("lessons", [])):
+            # Handle file uploads
+            video_file = request.files.get(f"sub_{i}_lesson_{j}_video")
+            doc_file = request.files.get(f"sub_{i}_lesson_{j}_doc")
+
+            video_path, doc_path = None, None
+
+            if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
+                filename = secure_filename(video_file.filename)
+                video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
+                video_file.save(video_path)
+
+            if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
+                filename = secure_filename(doc_file.filename)
+                doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
+                doc_file.save(doc_path)
+
+            lesson = Lesson(
+                title=lesson_data["title"],
+                notes=lesson_data.get("notes"),
+                reference_link=lesson_data.get("references"),
+                video_url=video_path,
+                document_url=doc_path,
+                course=course
+            )
+            subcategory.lessons.append(lesson)
+
+        course.subcategories.append(subcategory)
+
     db.session.add(course)
     db.session.commit()
+
     return jsonify({"message": "Course created", "id": course.id}), 201
 
+@bp.route("/<int:course_id>/add-lesson", methods=["POST"])
+@jwt_required()
+@role_required("admin")
+def add_lesson(course_id):
+    data = request.form.get("data")
+    if not data:
+        return jsonify({"error": "Missing lesson data"}), 400
+
+    try:
+        data = json.loads(data)
+    except:
+        return jsonify({"error": "Invalid JSON format"}), 400
+
+    course = Course.query.get(course_id)
+    if not course:
+        return jsonify({"error": "Course not found"}), 404
+
+    subcategory_id = data.get("subcategory_id")
+    subcategory = SubCategory.query.get(subcategory_id)
+    if not subcategory or subcategory.course_id != course_id:
+        return jsonify({"error": "Invalid subcategory"}), 400
+
+    # Handle file uploads
+    video_file = request.files.get("video")
+    doc_file = request.files.get("document")
+
+    video_path, doc_path = None, None
+
+    if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
+        filename = secure_filename(video_file.filename)
+        video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
+        video_file.save(video_path)
+
+    if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
+        filename = secure_filename(doc_file.filename)
+        doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
+        doc_file.save(doc_path)
+
+    lesson = Lesson(
+        title=data["title"],
+        notes=data.get("notes"),
+        reference_link=data.get("references"),
+        video_url=video_path,
+        document_url=doc_path,
+        course=course,
+        subcategory=subcategory
+    )
+
+    db.session.add(lesson)
+    db.session.commit()
+
+    return jsonify({"message": "Lesson added", "lesson_id": lesson.id}), 201
 # Update a course (admin only)
 @bp.route("/<int:course_id>", methods=["PUT"])
 @jwt_required()
