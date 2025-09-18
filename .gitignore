@@ -119,3 +119,4 @@ venv.bak/
 
 # Static files
 static/
+static/uploads/
