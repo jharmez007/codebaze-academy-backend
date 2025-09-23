@@ -291,6 +291,18 @@ def toggle_publish(course_id):
         "is_published": course.is_published
     }), 200
 
+@bp.route("/<int:course_id>", methods=["DELETE"])
+@jwt_required()
+@role_required("admin")
+def delete_course(course_id):
+    course = Course.query.get_or_404(course_id)
+    db.session.delete(course)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Course deleted successfully",
+        "id": course_id
+    }), 200
 
 @bp.route("/<int:course_id>/add-lesson", methods=["POST"])
 @jwt_required()
