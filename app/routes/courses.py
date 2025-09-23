@@ -56,7 +56,7 @@ def list_courses():
     return jsonify(result)
 
 @bp.route("/admin", methods=["GET"])
-def list_courses():
+def list_courses_all():
     courses = Course.query.all()
     result = []
     for c in courses:
