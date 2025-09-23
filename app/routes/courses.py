@@ -85,6 +85,7 @@ def get_course(course_id):
         "description": course.description,
         "price": course.price,
         "is_published": course.is_published,
+        "total_lessons": course.total_lessons,
         "created_at": course.created_at.isoformat(),
         "subcategories": []
     }
