@@ -55,6 +55,20 @@ def list_courses():
         })
     return jsonify(result)
 
+@bp.route("/admin", methods=["GET"])
+def list_courses():
+    courses = Course.query.all()
+    result = []
+    for c in courses:
+        result.append({
+            "id": c.id,
+            "title": c.title,
+            "description": c.description,
+            "price": c.price,
+            "created_at": c.created_at.isoformat()
+        })
+    return jsonify(result)
+
 # Get details of a single course
 @bp.route("/<int:course_id>", methods=["GET"])
 @jwt_required(optional=True)  # allow public view
