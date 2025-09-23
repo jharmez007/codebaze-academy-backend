@@ -10,6 +10,8 @@ class Course(db.Model):
     price = db.Column(db.Float, nullable=False)
     is_published = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    slug = db.Column(db.String(150), unique=True, nullable=False)   # add this
+    image = db.Column(db.String(255))  
 
     lessons = db.relationship('Lesson', back_populates='course', cascade='all, delete-orphan')
     enrollments = db.relationship('Enrollment', back_populates='course')
