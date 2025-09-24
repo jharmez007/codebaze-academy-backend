@@ -209,7 +209,7 @@ def create_course():
 
     # Build sections & lessons
     for i, sub in enumerate(sections_data):
-        sections = sections(
+        sections = Section(
             name=sub["name"],
             slug=slugify(sub["name"]),
             course=course
