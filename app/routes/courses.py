@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from app.extensions import db
 from werkzeug.utils import secure_filename
 from app.models import Course, Lesson
-from app.models.course import sections
+from app.models.course import Section
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.auth import role_required
 import json
