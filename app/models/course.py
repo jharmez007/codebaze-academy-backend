@@ -24,6 +24,10 @@ class Course(db.Model):
         cascade="all, delete-orphan"
     )
 
+    @property
+    def total_lessons(self):
+        return sum(len(sub.lessons) for sub in self.subcategories)
+
 class SubCategory(db.Model):
     __tablename__ = "subcategories"
     id = db.Column(db.Integer, primary_key=True)

@@ -51,6 +51,8 @@ def list_courses():
             "title": c.title,
             "description": c.description,
             "price": c.price,
+            "is_published": c.is_published,
+            "total_lessons": c.total_lessons,
             "created_at": c.created_at.isoformat()
         })
     return jsonify(result)
@@ -65,6 +67,8 @@ def list_courses_all():
             "title": c.title,
             "description": c.description,
             "price": c.price,
+            "is_published": c.is_published,
+            "total_lessons": c.total_lessons,
             "created_at": c.created_at.isoformat()
         })
     return jsonify(result)
