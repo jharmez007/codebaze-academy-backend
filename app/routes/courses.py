@@ -192,12 +192,12 @@ def create_course():
     # Handle course image
     image_file = request.files.get("image")
     image_path = None
-    if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):  # e.g. jpg/png
+    if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
         filename = secure_filename(image_file.filename)
         image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
         image_file.save(image_path)
 
-    # Create course with slug (published = False initially)
+    # Create course
     course = Course(
         title=title,
         description=description,
@@ -209,9 +209,10 @@ def create_course():
 
     # Build sections & lessons
     for i, sub in enumerate(sections_data):
-        sections = Section(
+        section = Section(
             name=sub["name"],
             slug=slugify(sub["name"]),
+            description=sub.get("description", ""),
             course=course
         )
 
@@ -225,8 +226,6 @@ def create_course():
                 filename = secure_filename(video_file.filename)
                 video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
                 video_file.save(video_path)
-
-                # Analyze video
                 duration, size = get_video_metadata(video_path)
 
             if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
@@ -243,11 +242,11 @@ def create_course():
                 document_url=doc_path,
                 duration=duration,
                 size=size,
-                course=course
+                section=section   # ✅ link to Section, not Course
             )
-            sections.lessons.append(lesson)
+            section.lessons.append(lesson)
 
-        course.sections.append(sections)
+        course.sections.append(section)
 
     db.session.add(course)
     db.session.commit()
