@@ -28,6 +28,7 @@ class SubCategory(db.Model):
     __tablename__ = "subcategories"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
+    slug = db.Column(db.String(150), unique=True, nullable=False)
 
     course_id = db.Column(
         db.Integer,

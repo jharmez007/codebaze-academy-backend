@@ -11,6 +11,7 @@ class Lesson(db.Model):
     reference_link = db.Column(db.String(500), nullable=True)
     notes = db.Column(db.Text, nullable=True)
     document_url = db.Column(db.String(255), nullable=True)
+    slug = db.Column(db.String(150), unique=True, nullable=False)
 
     course = db.relationship('Course', back_populates='lessons')
     progress = db.relationship('Progress', back_populates='lesson')
