@@ -12,6 +12,8 @@ class Lesson(db.Model):
     notes = db.Column(db.Text, nullable=True)
     document_url = db.Column(db.String(255), nullable=True)
     slug = db.Column(db.String(150), unique=True, nullable=False)
+    duration = db.Column(db.Float, nullable=True)   # duration in seconds or minutes
+    size = db.Column(db.Integer, nullable=True)  # size in bytes
 
     course = db.relationship('Course', back_populates='lessons')
     progress = db.relationship('Progress', back_populates='lesson')
