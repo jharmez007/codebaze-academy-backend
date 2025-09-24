@@ -85,6 +85,7 @@ def get_course(course_id):
         "description": course.description,
         "price": course.price,
         "is_published": course.is_published,
+        "total_lessons": course.total_lessons,
         "created_at": course.created_at.isoformat(),
         "subcategories": []
     }
@@ -291,6 +292,18 @@ def toggle_publish(course_id):
         "is_published": course.is_published
     }), 200
 
+@bp.route("/<int:course_id>", methods=["DELETE"])
+@jwt_required()
+@role_required("admin")
+def delete_course(course_id):
+    course = Course.query.get_or_404(course_id)
+    db.session.delete(course)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Course deleted successfully",
+        "id": course_id
+    }), 200
 
 @bp.route("/<int:course_id>/add-lesson", methods=["POST"])
 @jwt_required()
@@ -350,20 +363,49 @@ def add_lesson(course_id):
 @role_required("admin")
 def update_course(course_id):
     course = Course.query.get_or_404(course_id)
-    data = request.get_json()
+
+    # Get form data (consistent with create_course)
+    raw_data = request.form.get("data")
+    if not raw_data:
+        return jsonify({"error": "Missing course data"}), 400
+
+    try:
+        data = json.loads(raw_data)
+    except:
+        return jsonify({"error": "Invalid JSON format"}), 400
+
+    # Update fields if provided
     course.title = data.get("title", course.title)
     course.description = data.get("description", course.description)
     course.price = data.get("price", course.price)
-    course.is_published = data.get("is_published", course.is_published)
-    db.session.commit()
-    return jsonify({"message": "Course updated"})
+    # course.is_published = data.get("is_published", course.is_published)
 
-# Delete a course (admin only)
-@bp.route("/<int:course_id>", methods=["DELETE"])
-@jwt_required()
-@role_required("admin")
-def delete_course(course_id):
-    course = Course.query.get_or_404(course_id)
-    db.session.delete(course)
+    # Handle new image if uploaded
+    image_file = request.files.get("image")
+    if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
+        filename = secure_filename(image_file.filename)
+        image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
+        image_file.save(image_path)
+        course.image = image_path  # update image path
+
     db.session.commit()
-    return jsonify({"message": "Course deleted"})
+
+    return jsonify({
+        "message": "Course updated",
+        "id": course.id,
+        "title": course.title,
+        "description": course.description,
+        "price": course.price,
+        "is_published": course.is_published,
+        "image": course.image
+    }), 200
+
+# # Delete a course (admin only)
+# @bp.route("/<int:course_id>", methods=["DELETE"])
+# @jwt_required()
+# @role_required("admin")
+# def delete_course(course_id):
+#     course = Course.query.get_or_404(course_id)
+#     db.session.delete(course)
+#     db.session.commit()
+#     return jsonify({"message": "Course deleted"})
