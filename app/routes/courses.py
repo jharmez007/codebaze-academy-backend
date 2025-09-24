@@ -6,7 +6,7 @@ from app.models.course import SubCategory
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.auth import role_required
 import json
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 import os, uuid, re
 
 UPLOAD_VIDEO_FOLDER = os.path.join("static", "uploads", "videos")
