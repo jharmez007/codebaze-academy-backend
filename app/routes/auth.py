@@ -68,7 +68,12 @@ def login():
 @jwt_required(refresh=True)
 def refresh():
     current_user_id = get_jwt_identity()
-    new_access_token = create_access_token(identity=current_user_id)
+    user = User.query.get(current_user_id)  # fetch user from DB
+    
+    new_access_token = create_access_token(
+        identity=str(user.id),
+        additional_claims={"role": user.role}
+    )
     return jsonify({"access_token": new_access_token}), 200
 
 # Get current user

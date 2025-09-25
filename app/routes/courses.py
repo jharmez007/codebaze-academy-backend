@@ -91,7 +91,7 @@ def get_course(course_id):
     }
 
     for sub in course.subcategories:
-        sub_data = {"id": sub.id, "name": sub.name, "lessons": []}
+        sub_data = {"id": sub.id, "name": sub.name, "description": sub.description, "lessons": []}
 
         for lesson in sub.lessons:
             lesson_data = {"id": lesson.id, "title": lesson.title}
