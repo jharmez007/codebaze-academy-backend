@@ -17,4 +17,4 @@ class Lesson(db.Model):
 
     course = db.relationship('Course', back_populates='lessons')
     progress = db.relationship('Progress', back_populates='lesson')
-    subcategory_id = db.Column(db.Integer, db.ForeignKey("subcategories.id"), nullable=False)
+    sections_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=False)

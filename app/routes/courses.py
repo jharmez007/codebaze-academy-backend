@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from app.extensions import db
 from werkzeug.utils import secure_filename
 from app.models import Course, Lesson
-from app.models.course import SubCategory
+from app.models.course import sections
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.auth import role_required
 import json
@@ -83,21 +83,23 @@ def get_course(course_id):
         "id": course.id,
         "title": course.title,
         "description": course.description,
+        "long_description": course.long_description,
         "price": course.price,
         "is_published": course.is_published,
         "total_lessons": course.total_lessons,
         "created_at": course.created_at.isoformat(),
-        "subcategories": []
+        "image": course.image,
+        "sections": []
     }
 
-    for sub in course.subcategories:
+    for sub in course.sections:
         sub_data = {"id": sub.id, "name": sub.name, "description": sub.description, "lessons": []}
 
         for lesson in sub.lessons:
             lesson_data = {"id": lesson.id, "title": lesson.title}
             sub_data["lessons"].append(lesson_data)
 
-        response["subcategories"].append(sub_data)
+        response["sections"].append(sub_data)
 
     return jsonify(response)
 
@@ -120,7 +122,7 @@ def get_course(course_id):
 #     title = data.get("title")
 #     description = data.get("description")
 #     price = data.get("price")
-#     subcategories_data = data.get("subcategories", [])
+#     sections_data = data.get("sections", [])
     
 
 #     if not all([title, description, price]):
@@ -128,9 +130,9 @@ def get_course(course_id):
 
 #     course = Course(title=title, description=description, price=price, is_published=True)
 
-#     # Build subcategories & lessons
-#     for i, sub in enumerate(subcategories_data):
-#         subcategory = SubCategory(name=sub["name"], course=course)
+#     # Build sections & lessons
+#     for i, sub in enumerate(sections_data):
+#         sections = SubCategory(name=sub["name"], course=course)
 
 #         for j, lesson_data in enumerate(sub.get("lessons", [])):
 #             # Handle file uploads
@@ -157,9 +159,9 @@ def get_course(course_id):
 #                 document_url=doc_path,
 #                 course=course
 #             )
-#             subcategory.lessons.append(lesson)
+#             sections.lessons.append(lesson)
 
-#         course.subcategories.append(subcategory)
+#         course.sections.append(sections)
 
 #     db.session.add(course)
 #     db.session.commit()
@@ -182,7 +184,7 @@ def create_course():
     title = data.get("title")
     description = data.get("description")
     price = data.get("price")
-    subcategories_data = data.get("subcategories", [])
+    sections_data = data.get("sections", [])
 
     if not all([title, description, price]):
         return jsonify({"error": "Missing fields"}), 400
@@ -205,9 +207,9 @@ def create_course():
         is_published=False
     )
 
-    # Build subcategories & lessons
-    for i, sub in enumerate(subcategories_data):
-        subcategory = SubCategory(
+    # Build sections & lessons
+    for i, sub in enumerate(sections_data):
+        sections = sections(
             name=sub["name"],
             slug=slugify(sub["name"]),
             course=course
@@ -243,9 +245,9 @@ def create_course():
                 size=size,
                 course=course
             )
-            subcategory.lessons.append(lesson)
+            sections.lessons.append(lesson)
 
-        course.subcategories.append(subcategory)
+        course.sections.append(sections)
 
     db.session.add(course)
     db.session.commit()
@@ -257,7 +259,7 @@ def create_course():
         "title": course.title,
         "image": course.image,
         "is_published": course.is_published,
-        "subcategories": [
+        "sections": [
             {
                 "id": sub.id,
                 "slug": sub.slug,
@@ -272,7 +274,7 @@ def create_course():
                     }
                     for lesson in sub.lessons
                 ]
-            } for sub in course.subcategories
+            } for sub in course.sections
         ]
     }), 201
 
@@ -323,9 +325,9 @@ def add_lesson(course_id):
         return jsonify({"error": "Course not found"}), 404
 
     subcategory_id = data.get("subcategory_id")
-    subcategory = SubCategory.query.get(subcategory_id)
-    if not subcategory or subcategory.course_id != course_id:
-        return jsonify({"error": "Invalid subcategory"}), 400
+    sections = sections.query.get(subcategory_id)
+    if not sections or sections.course_id != course_id:
+        return jsonify({"error": "Invalid sections"}), 400
 
     # Handle file uploads
     video_file = request.files.get("video")
@@ -350,7 +352,7 @@ def add_lesson(course_id):
         video_url=video_path,
         document_url=doc_path,
         course=course,
-        subcategory=subcategory
+        sections=sections
     )
 
     db.session.add(lesson)
