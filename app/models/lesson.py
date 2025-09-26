@@ -24,7 +24,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 #     progress = db.relationship("Progress", back_populates="lesson")
 
 class Lesson(db.Model):
-    __tablename__ = "lessons"
+    __tablename__ = "lesson"
 
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
