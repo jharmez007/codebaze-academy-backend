@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 class Course(db.Model):
     __tablename__ = "course"
+
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
     description = db.Column(db.Text, nullable=False)
@@ -14,16 +15,15 @@ class Course(db.Model):
     slug = db.Column(db.String(150), unique=True, nullable=False)
     image = db.Column(db.String(255))
 
-    lessons = db.relationship("Lesson", back_populates="course", cascade="all, delete-orphan")
-    enrollments = db.relationship("Enrollment", back_populates="course")
-    resources = db.relationship("Resource", back_populates="course")
-    comments = db.relationship("Comment", back_populates="course")
-
     sections = db.relationship(
         "Section",
         back_populates="course",
         cascade="all, delete-orphan"
     )
+
+    enrollments = db.relationship("Enrollment", back_populates="course")
+    resources = db.relationship("Resource", back_populates="course")
+    comments = db.relationship("Comment", back_populates="course")
 
     @property
     def total_lessons(self):
@@ -32,22 +32,19 @@ class Course(db.Model):
 
 class Section(db.Model):
     __tablename__ = "sections"
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
     slug = db.Column(db.String(150), unique=True, nullable=False)
     description = db.Column(db.Text, nullable=False)
 
-    course_id = db.Column(
-        db.Integer,
-        db.ForeignKey("course.id"),
-        nullable=False
-    )
+    course_id = db.Column(db.Integer, db.ForeignKey("course.id"), nullable=False)
 
     course = db.relationship("Course", back_populates="sections")
 
     lessons = db.relationship(
         "Lesson",
-        backref="section",
+        back_populates="section",
         cascade="all, delete-orphan"
     )
 
