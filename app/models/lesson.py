@@ -40,5 +40,5 @@ class Lesson(db.Model):
 
     # ✅ each Lesson belongs to a Section (not Course directly)
     section_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=False)
-
+    course = db.relationship("Course", back_populates="lesson")
     progress = db.relationship("Progress", back_populates="lesson")
