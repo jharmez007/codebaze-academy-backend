@@ -361,47 +361,47 @@ def add_lesson(course_id):
 
     return jsonify({"message": "Lesson added", "lesson_id": lesson.id}), 201
 # Update a course (admin only)
-@bp.route("/<int:course_id>", methods=["PUT"])
-@jwt_required()
-@role_required("admin")
-def update_course(course_id):
-    course = Course.query.get_or_404(course_id)
+# @bp.route("/<int:course_id>", methods=["PUT"])
+# @jwt_required()
+# @role_required("admin")
+# def update_course(course_id):
+#     course = Course.query.get_or_404(course_id)
 
-    # Get form data (consistent with create_course)
-    raw_data = request.form.get("data")
-    if not raw_data:
-        return jsonify({"error": "Missing course data"}), 400
+#     # Get form data (consistent with create_course)
+#     raw_data = request.form.get("data")
+#     if not raw_data:
+#         return jsonify({"error": "Missing course data"}), 400
 
-    try:
-        data = json.loads(raw_data)
-    except:
-        return jsonify({"error": "Invalid JSON format"}), 400
+#     try:
+#         data = json.loads(raw_data)
+#     except:
+#         return jsonify({"error": "Invalid JSON format"}), 400
 
-    # Update fields if provided
-    course.title = data.get("title", course.title)
-    course.description = data.get("description", course.description)
-    course.price = data.get("price", course.price)
-    # course.is_published = data.get("is_published", course.is_published)
+#     # Update fields if provided
+#     course.title = data.get("title", course.title)
+#     course.description = data.get("description", course.description)
+#     course.price = data.get("price", course.price)
+#     # course.is_published = data.get("is_published", course.is_published)
 
-    # Handle new image if uploaded
-    image_file = request.files.get("image")
-    if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
-        filename = secure_filename(image_file.filename)
-        image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
-        image_file.save(image_path)
-        course.image = image_path  # update image path
+#     # Handle new image if uploaded
+#     image_file = request.files.get("image")
+#     if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
+#         filename = secure_filename(image_file.filename)
+#         image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
+#         image_file.save(image_path)
+#         course.image = image_path  # update image path
 
-    db.session.commit()
+#     db.session.commit()
 
-    return jsonify({
-        "message": "Course updated",
-        "id": course.id,
-        "title": course.title,
-        "description": course.description,
-        "price": course.price,
-        "is_published": course.is_published,
-        "image": course.image
-    }), 200
+#     return jsonify({
+#         "message": "Course updated",
+#         "id": course.id,
+#         "title": course.title,
+#         "description": course.description,
+#         "price": course.price,
+#         "is_published": course.is_published,
+#         "image": course.image
+#     }), 200
 
 # # Delete a course (admin only)
 # @bp.route("/<int:course_id>", methods=["DELETE"])
@@ -412,3 +412,100 @@ def update_course(course_id):
 #     db.session.delete(course)
 #     db.session.commit()
 #     return jsonify({"message": "Course deleted"})
+
+@bp.route("/<int:course_id>", methods=["PUT"])
+@jwt_required()
+@role_required("admin")
+def update_course(course_id):
+    course = Course.query.get_or_404(course_id)
+
+    raw_data = request.form.get("data")
+    if not raw_data:
+        return jsonify({"error": "Missing course data"}), 400
+
+    try:
+        data = json.loads(raw_data)
+    except:
+        return jsonify({"error": "Invalid JSON format"}), 400
+
+    # Update base fields
+    course.title = data.get("title", course.title)
+    course.description = data.get("description", course.description)
+    course.price = data.get("price", course.price)
+    course.long_description = data.get("long_description", course.long_description)
+
+    # Handle new course image if uploaded
+    image_file = request.files.get("image")
+    if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
+        filename = secure_filename(image_file.filename)
+        image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
+        image_file.save(image_path)
+        course.image = image_path
+
+    # Handle sections & lessons
+    sections_data = data.get("sections", [])
+    for i, sub in enumerate(sections_data):
+        section_id = sub.get("id")
+        if section_id:
+            section = Section.query.filter_by(id=section_id, course_id=course.id).first()
+            if section:
+                # update existing section
+                section.name = sub.get("name", section.name)
+                section.description = sub.get("description", section.description)
+            else:
+                continue
+        else:
+            # create new section
+            section = Section(
+                name=sub["name"],
+                slug=slugify(sub["name"]),
+                description=sub.get("description", ""),
+                course=course
+            )
+            db.session.add(section)
+
+        # Handle lessons
+        for j, lesson_data in enumerate(sub.get("lessons", [])):
+            lesson_id = lesson_data.get("id")
+            if lesson_id:
+                lesson = Lesson.query.filter_by(id=lesson_id, section_id=section.id).first()
+                if lesson:
+                    lesson.title = lesson_data.get("title", lesson.title)
+                    lesson.notes = lesson_data.get("notes", lesson.notes)
+                    lesson.reference_link = lesson_data.get("reference_link", lesson.reference_link)
+                else:
+                    continue
+            else:
+                # Create new lesson
+                video_file = request.files.get(f"sub_{i}_lesson_{j}_video")
+                doc_file = request.files.get(f"sub_{i}_lesson_{j}_doc")
+
+                video_path, doc_path, duration, size = None, None, None, None
+
+                if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
+                    filename = secure_filename(video_file.filename)
+                    video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
+                    video_file.save(video_path)
+                    duration, size = get_video_metadata(video_path)
+
+                if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
+                    filename = secure_filename(doc_file.filename)
+                    doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
+                    doc_file.save(doc_path)
+
+                lesson = Lesson(
+                    title=lesson_data["title"],
+                    slug=slugify(lesson_data["title"]),
+                    notes=lesson_data.get("notes"),
+                    reference_link=lesson_data.get("reference_link"),
+                    video_url=video_path,
+                    document_url=doc_path,
+                    duration=duration,
+                    size=size,
+                    section=section
+                )
+                db.session.add(lesson)
+
+    db.session.commit()
+
+    return jsonify({"message": "Course and related data updated"}), 200
