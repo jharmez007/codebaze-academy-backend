@@ -28,7 +28,7 @@ class Lesson(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
-    slug = db.Column(db.String(150), unique=True, nullable=False)
+    slug = db.Column(db.String(150), nullable=False)
 
     video_url = db.Column(db.String(255), nullable=True)
     reference_link = db.Column(db.String(500), nullable=True)

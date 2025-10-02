@@ -26,3 +26,7 @@ static/uploads/docs/
 static/uploads/images/
 instance/
 migrations/
+app/__pycache__
+app/__pycache__/
+models/__pycache__
+models/__pycache__/
