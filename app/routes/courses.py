@@ -183,6 +183,7 @@ def create_course():
 
     title = data.get("title")
     description = data.get("description")
+    long_description = data.get("long_description")
     price = data.get("price")
     sections_data = data.get("sections", [])
 
@@ -201,6 +202,7 @@ def create_course():
     course = Course(
         title=title,
         description=description,
+        long_description=long_description,
         price=price,
         slug=slugify(title),
         image=image_path,
