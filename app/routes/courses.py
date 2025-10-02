@@ -214,7 +214,7 @@ def create_course():
         section = Section(
             name=sub["name"],
             slug=slugify(sub["name"]),
-            description=sub.get("description", ""),
+            description=sub.get("description"),
             course=course
         )
 
