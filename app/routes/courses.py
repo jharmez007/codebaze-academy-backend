@@ -49,6 +49,26 @@ def slugify(text):
     text = re.sub(r'[^a-zA-Z0-9]+', '-', text)
     return text.strip('-').lower()
 
+def format_duration(seconds):
+    """Convert float seconds to HH:MM:SS string."""
+    if not seconds:
+        return "00:00:00"
+    seconds = int(seconds)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02}:{minutes:02}:{secs:02}"
+
+
+def format_size(bytes_size):
+    """Convert bytes to human-readable GB/MB/KB."""
+    if not bytes_size:
+        return "0 KB"
+    for unit in ["B", "KB", "MB", "GB"]:
+        if bytes_size < 1024.0:
+            return f"{bytes_size:.2f} {unit}"
+        bytes_size /= 1024.0
+    return f"{bytes_size:.2f} TB"
+
 bp = Blueprint("courses", __name__)
 
 # List all published courses
@@ -690,8 +710,8 @@ def update_lesson(course_id, lesson_id):
             "video_url": lesson.video_url,
             "document_url": lesson.document_url,
             "document_url": lesson.document_url,
-            "duration": lesson.duration,
-            "size": lesson.size,
+            "duration": format_duration(lesson.duration),
+            "size": format_size(lesson.size),
             "notes": lesson.notes,
             "reference_link": lesson.reference_link
         }
