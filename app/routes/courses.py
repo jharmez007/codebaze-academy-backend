@@ -511,17 +511,40 @@ def update_course(course_id):
     return jsonify({"message": "Course and related data updated"}), 200
 
 # Delete a Section and all its Lessons
+# @bp.route("/<int:course_id>/sections/<int:section_id>", methods=["DELETE", "OPTIONS"])
+# @jwt_required()
+# @role_required("admin")
+# def delete_section(course_id, section_id):
+#     course = Course.query.get_or_404(course_id)
+#     section = Section.query.filter_by(id=section_id, course_id=course.id).first()
+
+#     if not section:
+#         return jsonify({"error": "Section not found"}), 404
+
+#     # Deleting section will also delete lessons if cascade is set in the model
+#     db.session.delete(section)
+#     db.session.commit()
+
+#     return jsonify({
+#         "message": "Section deleted successfully",
+#         "section_id": section_id,
+#         "course_id": course_id
+#     }), 200
+
 @bp.route("/<int:course_id>/sections/<int:section_id>", methods=["DELETE", "OPTIONS"])
-@jwt_required()
+@jwt_required(optional=True)
 @role_required("admin")
 def delete_section(course_id, section_id):
+    # Handle CORS preflight
+    if request.method == "OPTIONS":
+        return jsonify({}), 200
+
     course = Course.query.get_or_404(course_id)
     section = Section.query.filter_by(id=section_id, course_id=course.id).first()
 
     if not section:
         return jsonify({"error": "Section not found"}), 404
 
-    # Deleting section will also delete lessons if cascade is set in the model
     db.session.delete(section)
     db.session.commit()
 
@@ -530,6 +553,7 @@ def delete_section(course_id, section_id):
         "section_id": section_id,
         "course_id": course_id
     }), 200
+
 
 
 # Delete a single Lesson
