@@ -3,6 +3,7 @@ from app.extensions import db
 from werkzeug.utils import secure_filename
 from app.models import Course, Lesson
 from app.models.course import Section
+from app.models.lesson import Quiz
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.auth import role_required
 import json
@@ -554,4 +555,120 @@ def delete_lesson(course_id, section_id, lesson_id):
         "lesson_id": lesson_id,
         "section_id": section_id,
         "course_id": course_id
+    }), 200
+
+@bp.route("/<int:course_id>/lessons/<int:lesson_id>", methods=["PUT"])
+@jwt_required()
+@role_required("admin")
+def update_lesson(course_id, lesson_id):
+    lesson = Lesson.query.get_or_404(lesson_id)
+
+    # Ensure lesson belongs to this course (via section → course)
+    if lesson.section.course_id != course_id:
+        return jsonify({"error": "Lesson does not belong to this course"}), 400
+
+    raw_data = request.form.get("data")
+    if not raw_data:
+        return jsonify({"error": "Missing lesson data"}), 400
+
+    try:
+        data = json.loads(raw_data)
+    except Exception:
+        return jsonify({"error": "Invalid JSON format"}), 400
+
+    # --- Update fields ---
+    lesson.title = data.get("title", lesson.title)
+    lesson.notes = data.get("notes", lesson.notes)
+    lesson.reference_link = data.get("reference_link", lesson.reference_link)
+    lesson.duration = data.get("duration", lesson.duration)
+
+    # --- Handle new file uploads ---
+    video_file = request.files.get("video")
+    doc_file = request.files.get("document")
+
+    if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
+        filename = secure_filename(video_file.filename)
+        video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
+        video_file.save(video_path)
+        lesson.video_url = f"/static/uploads/videos/{filename}"
+
+    if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
+        filename = secure_filename(doc_file.filename)
+        doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
+        doc_file.save(doc_path)
+        lesson.document_url = f"/static/uploads/docs/{filename}"
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Lesson updated successfully",
+        "lesson": {
+            "id": lesson.id,
+            "title": lesson.title,
+            "video_url": lesson.video_url,
+            "document_url": lesson.document_url,
+            "notes": lesson.notes,
+            "reference_link": lesson.reference_link
+        }
+    }), 200
+
+
+@bp.route("/<int:course_id>/lessons/<int:lesson_id>/add-quiz", methods=["POST"])
+@jwt_required()
+@role_required("admin")
+def add_quiz(course_id, lesson_id):
+    lesson = Lesson.query.get_or_404(lesson_id)
+
+    if lesson.section.course_id != course_id:
+        return jsonify({"error": "Lesson does not belong to this course"}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing quiz data"}), 400
+
+    question = data.get("question")
+    options = data.get("options")
+    correct_answer = data.get("correct_answer")
+
+    if not question or not options or not correct_answer:
+        return jsonify({"error": "Incomplete quiz data"}), 400
+
+    quiz = Quiz(
+        question=question,
+        options=options,
+        correct_answer=correct_answer,
+        lesson=lesson
+    )
+
+    db.session.add(quiz)
+    db.session.commit()
+
+    return jsonify({"message": "Quiz added", "quiz_id": quiz.id}), 201
+
+@bp.route("/lessons/<int:lesson_id>/quizzes/<int:quiz_id>", methods=["PUT"])
+@jwt_required()
+@role_required("admin")
+def update_quiz(lesson_id, quiz_id):
+    quiz = Quiz.query.get_or_404(quiz_id)
+    if quiz.lesson_id != lesson_id:
+        return jsonify({"error": "Quiz does not belong to this lesson"}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Missing data"}), 400
+
+    quiz.question = data.get("question", quiz.question)
+    quiz.options = data.get("options", quiz.options)
+    quiz.correct_answer = data.get("correct_answer", quiz.correct_answer)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Quiz updated successfully",
+        "quiz": {
+            "id": quiz.id,
+            "question": quiz.question,
+            "options": quiz.options,
+            "correct_answer": quiz.correct_answer
+        }
     }), 200
