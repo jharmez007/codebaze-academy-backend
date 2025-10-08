@@ -675,6 +675,47 @@ def update_lesson(course_id, lesson_id):
     }), 200
 
 
+@bp.route("/lessons/<int:lesson_id>", methods=["GET"])
+@jwt_required(optional=True)
+def get_lesson_details(lesson_id):
+    """
+    Returns full details of a specific lesson including video, document, notes, and quizzes.
+    """
+    lesson = Lesson.query.get_or_404(lesson_id)
+
+    # build lesson response
+    lesson_data = {
+        "id": lesson.id,
+        "title": lesson.title,
+        "slug": lesson.slug,
+        "notes": lesson.notes,
+        "reference_link": lesson.reference_link,
+        "video_url": lesson.video_url,
+        "document_url": lesson.document_url,
+        "duration": lesson.duration,
+        "size": lesson.size,
+        "created_at": lesson.created_at.isoformat(),
+        "section": {
+            "id": lesson.section.id,
+            "name": lesson.section.name,
+            "course_id": lesson.section.course_id
+        } if lesson.section else None,
+        "quizzes": []
+    }
+
+    # include related quizzes
+    if hasattr(lesson, "quizzes") and lesson.quizzes:
+        for quiz in lesson.quizzes:
+            lesson_data["quizzes"].append({
+                "id": quiz.id,
+                "question": quiz.question,
+                "options": quiz.options,
+                "correct_answer": quiz.correct_answer
+            })
+
+    return jsonify(lesson_data), 200
+
+
 @bp.route("/<int:course_id>/lessons/<int:lesson_id>/add-quiz", methods=["POST"])
 @jwt_required()
 @role_required("admin")
