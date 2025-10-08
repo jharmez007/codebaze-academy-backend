@@ -42,3 +42,13 @@ class Lesson(db.Model):
     section_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=False)
     section = db.relationship("Section", back_populates="lessons")
     progress = db.relationship("Progress", back_populates="lesson")
+
+class Quiz(db.Model):
+    __tablename__ = "quiz"
+    id = db.Column(db.Integer, primary_key=True)
+    question = db.Column(db.String(500), nullable=False)
+    options = db.Column(db.JSON, nullable=False)  # ["A", "B", "C", "D"]
+    correct_answer = db.Column(db.String(200), nullable=False)
+
+    lesson_id = db.Column(db.Integer, db.ForeignKey("lesson.id"), nullable=False)
+    lesson = db.relationship("Lesson", backref=db.backref("quizzes", cascade="all, delete"))
