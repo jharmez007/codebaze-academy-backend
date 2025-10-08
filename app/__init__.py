@@ -5,7 +5,8 @@ from .routes import auth, student, admin, courses, enrollments, progress, commen
 from flask_cors import CORS
 
 def create_app():
-    app = Flask(__name__)
+    # app = Flask(__name__)
+    app = Flask(__name__, static_folder="../static")
     CORS(app, resources={r"/*": {"origins": "*"}})
     app.config.from_object(Config)
 
