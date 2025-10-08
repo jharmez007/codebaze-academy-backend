@@ -23,17 +23,27 @@ ALLOWED_IMG_EXT = {"png", "jpg", "jpeg", "gif"}
 def allowed_file(filename, allowed_ext):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed_ext
 
-def get_video_metadata(path):
+def get_video_metadata(video_path):
     try:
-        clip = VideoFileClip(path)
-        duration = int(clip.duration)  # in seconds
-        clip.reader.close()
-        clip.audio.reader.close_proc()
-        size = os.path.getsize(path)  # in bytes
+        clip = VideoFileClip(video_path, audio=False)  # ✅ disable audio reading unless needed
+        duration = round(clip.duration, 2) if clip.duration else None
+        size = os.path.getsize(video_path)
         return duration, size
     except Exception as e:
-        print("Video analysis error:", e)
+        print(f"Error analyzing video: {e}")
         return None, None
+    finally:
+        # ✅ safely close without assuming attributes exist
+        try:
+            if "clip" in locals():
+                if hasattr(clip, "reader") and hasattr(clip.reader, "close"):
+                    clip.reader.close()
+                if hasattr(clip, "audio") and clip.audio and hasattr(clip.audio, "reader"):
+                    if hasattr(clip.audio.reader, "close_proc"):
+                        clip.audio.reader.close_proc()
+                del clip
+        except Exception as cleanup_err:
+            print(f"Cleanup warning: {cleanup_err}")
     
 def slugify(text):
     text = re.sub(r'[^a-zA-Z0-9]+', '-', text)
