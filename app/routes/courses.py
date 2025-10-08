@@ -675,7 +675,11 @@ def update_lesson(course_id, lesson_id):
     # --- Update fields ---
     lesson.title = data.get("title", lesson.title)
     lesson.notes = data.get("notes", lesson.notes)
-    lesson.reference_link = data.get("reference_link", lesson.reference_link)
+    ref_links = data.get("reference_link")
+    if isinstance(ref_links, list):
+        lesson.reference_link = json.dumps(ref_links)  # store array as JSON string
+    elif isinstance(ref_links, str):
+        lesson.reference_link = ref_links  # fallback (in case frontend still sends string)
     lesson.duration = data.get("duration", lesson.duration)
 
     # --- Handle new file uploads ---
