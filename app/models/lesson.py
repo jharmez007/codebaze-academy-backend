@@ -45,10 +45,13 @@ class Lesson(db.Model):
 
 class Quiz(db.Model):
     __tablename__ = "quiz"
+
     id = db.Column(db.Integer, primary_key=True)
     question = db.Column(db.String(500), nullable=False)
-    options = db.Column(db.JSON, nullable=False)  # ["A", "B", "C", "D"]
+    options = db.Column(db.JSON, nullable=True)  # Only needed for multiple choice
     correct_answer = db.Column(db.String(200), nullable=False)
+    quiz_type = db.Column(db.String(50), nullable=False)  # multiple_choice, true_false, free_text
+    explanation = db.Column(db.String(1000), nullable=True)
 
     lesson_id = db.Column(db.Integer, db.ForeignKey("lesson.id"), nullable=False)
     lesson = db.relationship("Lesson", backref=db.backref("quizzes", cascade="all, delete"))
