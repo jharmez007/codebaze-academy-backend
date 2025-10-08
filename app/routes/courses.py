@@ -845,3 +845,20 @@ def update_quiz(lesson_id, quiz_id):
             "explanation": quiz.explanation
         }
     }), 200
+
+@bp.route("/lessons/<int:lesson_id>/quizzes/<int:quiz_id>", methods=["DELETE"])
+@jwt_required()
+@role_required("admin")
+def delete_quiz(lesson_id, quiz_id):
+    """
+    Delete a specific quiz under a lesson.
+    """
+    quiz = Quiz.query.get_or_404(quiz_id)
+
+    if quiz.lesson_id != lesson_id:
+        return jsonify({"error": "Quiz does not belong to this lesson"}), 400
+
+    db.session.delete(quiz)
+    db.session.commit()
+
+    return jsonify({"message": "Quiz deleted successfully"}), 200
