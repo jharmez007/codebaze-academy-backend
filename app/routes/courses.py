@@ -404,6 +404,8 @@ def add_lesson(course_id):
         video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
         video_file.save(video_path)
 
+        duration, size = get_video_metadata(video_path)
+
     if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
         filename = secure_filename(doc_file.filename)
         doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
@@ -415,6 +417,8 @@ def add_lesson(course_id):
         reference_link=data.get("references"),
         video_url=video_path,
         document_url=doc_path,
+        duration=duration,
+        size=size,
         course=course,
         sections=sections
     )
@@ -654,6 +658,12 @@ def update_lesson(course_id, lesson_id):
         video_file.save(video_path)
         lesson.video_url = f"/static/uploads/videos/{filename}"
 
+        duration, size = get_video_metadata(video_path)
+        if duration:
+            lesson.duration = duration
+        if size:
+            lesson.size = size
+
     if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
         filename = secure_filename(doc_file.filename)
         doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
@@ -669,6 +679,9 @@ def update_lesson(course_id, lesson_id):
             "title": lesson.title,
             "video_url": lesson.video_url,
             "document_url": lesson.document_url,
+            "document_url": lesson.document_url,
+            "duration": lesson.duration,
+            "size": lesson.size,
             "notes": lesson.notes,
             "reference_link": lesson.reference_link
         }
