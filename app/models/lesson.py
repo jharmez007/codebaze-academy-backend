@@ -38,7 +38,6 @@ class Lesson(db.Model):
     size = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # ✅ each Lesson belongs to a Section (not Course directly)
     section_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=False)
     section = db.relationship("Section", back_populates="lessons")
     progress = db.relationship("Progress", back_populates="lesson")
