@@ -511,7 +511,7 @@ def update_course(course_id):
     return jsonify({"message": "Course and related data updated"}), 200
 
 # Delete a Section and all its Lessons
-@bp.route("/<int:course_id>/sections/<int:section_id>", methods=["DELETE"])
+@bp.route("/<int:course_id>/sections/<int:section_id>", methods=["DELETE", "OPTIONS"])
 @jwt_required()
 @role_required("admin")
 def delete_section(course_id, section_id):
