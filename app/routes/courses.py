@@ -732,21 +732,45 @@ def add_quiz(course_id, lesson_id):
     question = data.get("question")
     options = data.get("options")
     correct_answer = data.get("correct_answer")
+    quiz_type = data.get("quiz_type")
+    explanation = data.get("explanation")
 
-    if not question or not options or not correct_answer:
+    if not question or not correct_answer or not quiz_type:
         return jsonify({"error": "Incomplete quiz data"}), 400
+
+    # Validate quiz_type
+    valid_types = ["multiple_choice", "true_false", "free_text"]
+    if quiz_type not in valid_types:
+        return jsonify({"error": f"Invalid quiz type. Must be one of {valid_types}"}), 400
+
+    # For multiple choice, options are required
+    if quiz_type == "multiple_choice" and (not options or not isinstance(options, list)):
+        return jsonify({"error": "Options must be provided for multiple choice quizzes"}), 400
 
     quiz = Quiz(
         question=question,
         options=options,
         correct_answer=correct_answer,
+        quiz_type=quiz_type,
+        explanation=explanation,
         lesson=lesson
     )
 
     db.session.add(quiz)
     db.session.commit()
 
-    return jsonify({"message": "Quiz added", "quiz_id": quiz.id}), 201
+    return jsonify({
+        "message": "Quiz added successfully",
+        "quiz": {
+            "id": quiz.id,
+            "question": quiz.question,
+            "options": quiz.options,
+            "correct_answer": quiz.correct_answer,
+            "quiz_type": quiz.quiz_type,
+            "explanation": quiz.explanation
+        }
+    }), 201
+
 
 @bp.route("/lessons/<int:lesson_id>/quizzes/<int:quiz_id>", methods=["PUT"])
 @jwt_required()
@@ -763,6 +787,13 @@ def update_quiz(lesson_id, quiz_id):
     quiz.question = data.get("question", quiz.question)
     quiz.options = data.get("options", quiz.options)
     quiz.correct_answer = data.get("correct_answer", quiz.correct_answer)
+    quiz.quiz_type = data.get("quiz_type", quiz.quiz_type)
+    quiz.explanation = data.get("explanation", quiz.explanation)
+
+    # Validate quiz_type when updating
+    valid_types = ["multiple_choice", "true_false", "free_text"]
+    if quiz.quiz_type not in valid_types:
+        return jsonify({"error": f"Invalid quiz type. Must be one of {valid_types}"}), 400
 
     db.session.commit()
 
@@ -772,6 +803,8 @@ def update_quiz(lesson_id, quiz_id):
             "id": quiz.id,
             "question": quiz.question,
             "options": quiz.options,
-            "correct_answer": quiz.correct_answer
+            "correct_answer": quiz.correct_answer,
+            "quiz_type": quiz.quiz_type,
+            "explanation": quiz.explanation
         }
     }), 200
