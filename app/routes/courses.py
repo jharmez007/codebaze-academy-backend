@@ -104,6 +104,68 @@ def get_course(course_id):
 
     return jsonify(response)
 
+@bp.route("/<int:course_id>/full", methods=["GET"])
+@jwt_required(optional=True)
+def get_full_course(course_id):
+    """
+    Returns full course data including all sections, lessons, and quizzes.
+    """
+    course = Course.query.get_or_404(course_id)
+
+    # Build deep nested response
+    course_data = {
+        "id": course.id,
+        "title": course.title,
+        "slug": getattr(course, "slug", None),
+        "description": course.description,
+        "long_description": course.long_description,
+        "price": course.price,
+        "is_published": course.is_published,
+        "total_lessons": course.total_lessons,
+        "created_at": course.created_at.isoformat(),
+        "image": course.image,
+        "sections": []
+    }
+
+    for section in course.sections:
+        section_data = {
+            "id": section.id,
+            "name": section.name,
+            "description": section.description,
+            "lessons": []
+        }
+
+        for lesson in section.lessons:
+            lesson_data = {
+                "id": lesson.id,
+                "title": lesson.title,
+                "slug": lesson.slug,
+                "notes": lesson.notes,
+                "reference_link": lesson.reference_link,
+                "video_url": lesson.video_url,
+                "document_url": lesson.document_url,
+                "duration": lesson.duration,
+                "size": lesson.size,
+                "created_at": lesson.created_at.isoformat(),
+                "quizzes": []
+            }
+
+            # include quizzes per lesson
+            if hasattr(lesson, "quizzes"):
+                for quiz in lesson.quizzes:
+                    lesson_data["quizzes"].append({
+                        "id": quiz.id,
+                        "question": quiz.question,
+                        "options": quiz.options,
+                        "correct_answer": quiz.correct_answer
+                    })
+
+            section_data["lessons"].append(lesson_data)
+
+        course_data["sections"].append(section_data)
+
+    return jsonify(course_data), 200
+
 # Create a course (admin only)
 # @bp.route("/", methods=["POST"])
 # @jwt_required()
