@@ -337,7 +337,7 @@ def create_course():
                 document_url=doc_path,
                 duration=duration,
                 size=size,
-                section=section   # ✅ link to Section, not Course
+                section=section 
             )
             section.lessons.append(lesson)
 
@@ -499,16 +499,6 @@ def add_lesson(course_id):
 #         "is_published": course.is_published,
 #         "image": course.image
 #     }), 200
-
-# # Delete a course (admin only)
-# @bp.route("/<int:course_id>", methods=["DELETE"])
-# @jwt_required()
-# @role_required("admin")
-# def delete_course(course_id):
-#     course = Course.query.get_or_404(course_id)
-#     db.session.delete(course)
-#     db.session.commit()
-#     return jsonify({"message": "Course deleted"})
 
 @bp.route("/<int:course_id>", methods=["PUT"])
 @jwt_required()
@@ -739,8 +729,7 @@ def get_lesson_details(lesson_id):
         "reference_link": lesson.reference_link,
         "video_url": lesson.video_url,
         "document_url": lesson.document_url,
-        "duration": lesson.duration,
-        "size": lesson.size,
+         
         "created_at": lesson.created_at.isoformat(),
         "section": {
             "id": lesson.section.id,
@@ -757,7 +746,8 @@ def get_lesson_details(lesson_id):
                 "id": quiz.id,
                 "question": quiz.question,
                 "options": quiz.options,
-                "correct_answer": quiz.correct_answer
+                "correct_answer": quiz.correct_answer,
+                "explanation": quiz.explanation
             })
 
     return jsonify(lesson_data), 200
