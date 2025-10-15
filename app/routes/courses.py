@@ -813,7 +813,9 @@ def add_quiz(course_id, lesson_id):
 @jwt_required()
 @role_required("admin")
 def update_quiz(lesson_id, quiz_id):
-    quiz = Quiz.query.get_or_404(quiz_id)
+    quiz = Quiz.query.get(quiz_id)
+    if not quiz:
+        return jsonify({"error": "Quiz not found"}), 404
     if quiz.lesson_id != lesson_id:
         return jsonify({"error": "Quiz does not belong to this lesson"}), 400
 
