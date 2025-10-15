@@ -54,11 +54,13 @@ def get_students_by_course(course_id):
     }), 200
 
 
-@bp.route("/students/<int:student_id>", methods=["GET"])
+@bp.route("/<int:student_id>", methods=["GET"])
 @jwt_required()
 @role_required("admin")
 def get_student_profile(student_id):
-    student = User.query.filter_by(id=student_id, role="student").first_or_404()
+    student = User.query.filter_by(id=student_id, role="student").first()
+    if not student:
+        return jsonify({"error": "Student not found"}), 404
     enrollments = []
     for e in student.enrollments:
         enrollments.append({
@@ -77,7 +79,7 @@ def get_student_profile(student_id):
 
 
 
-@bp.route("/students/<int:student_id>/suspend", methods=["PUT"])
+@bp.route("/<int:student_id>/suspend", methods=["PUT"])
 @jwt_required()
 @role_required("admin")
 def suspend_student(student_id):
@@ -89,7 +91,7 @@ def suspend_student(student_id):
     return jsonify({"message": f"Student {student.name} has been suspended."}), 200
 
 
-@bp.route("/students/<int:student_id>/activate", methods=["PUT"])
+@bp.route("/<int:student_id>/activate", methods=["PUT"])
 @jwt_required()
 @role_required("admin")
 def activate_student(student_id):
