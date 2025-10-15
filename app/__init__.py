@@ -19,7 +19,7 @@ def create_app():
     app.register_blueprint(enrollments.bp, url_prefix="/enrollments")
     app.register_blueprint(progress.bp, url_prefix="/progress")
     app.register_blueprint(comments.bp, url_prefix="/comments")
-    # app.register_blueprint(student.bp, url_prefix='/student')
+    app.register_blueprint(student.bp, url_prefix='/students')
     # app.register_blueprint(admin.bp, url_prefix='/admin')
 
     return app
