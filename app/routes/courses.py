@@ -130,7 +130,7 @@ def get_course(course_id):
         sub_data = {"id": sub.id, "name": sub.name, "description": sub.description, "lessons": []}
 
         for lesson in sub.lessons:
-            lesson_data = {"id": lesson.id, "title": lesson.title, "duration": lesson.duration, "size": lesson.size}
+            lesson_data = {"id": lesson.id, "title": lesson.title, "duration": format_duration(lesson.duration),"size": format_size(lesson.size)}
             sub_data["lessons"].append(lesson_data)
 
         response["sections"].append(sub_data)
