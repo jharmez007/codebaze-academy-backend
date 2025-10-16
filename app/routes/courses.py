@@ -115,6 +115,7 @@ def get_course(course_id):
     response = {
         "id": course.id,
         "title": course.title,
+        "slug": course.slug,
         "description": course.description,
         "long_description": course.long_description,
         "price": course.price,
