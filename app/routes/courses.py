@@ -79,6 +79,7 @@ def list_courses():
     for c in courses:
         result.append({
             "id": c.id,
+            "image": c.image,
             "title": c.title,
             "description": c.description,
             "price": c.price,
