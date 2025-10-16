@@ -29,7 +29,6 @@ def enroll(course_id):
         data = request.get_json()
         if not data or "email" not in data:
             return jsonify({"error": "Email required for guest enrollment"}), 400
-        
         email = data["email"]
 
         existing = Enrollment.query.filter_by(email=email, course_id=course_id).first()
