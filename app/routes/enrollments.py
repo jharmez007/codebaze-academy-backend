@@ -82,10 +82,10 @@ def request_enrollment():
     hashed_token = generate_password_hash(one_time_token)
 
     if pending:
-        pending.one_time_token = hashed_token
+        pending.one_time_token = one_time_token
         pending.created_at = datetime.utcnow()
     else:
-        pending = PendingUser(email=email, one_time_token=hashed_token)
+        pending = PendingUser(email=email, one_time_token=one_time_token)
         db.session.add(pending)
 
     db.session.commit()
