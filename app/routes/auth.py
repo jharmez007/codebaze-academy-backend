@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify
 from app.extensions import db
 from app.models import User
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, create_refresh_token
+from werkzeug.security import check_password_hash
+from datetime import timedelta
 
 bp = Blueprint('auth', __name__)
 
@@ -88,3 +90,55 @@ def me():
         "email": user.email,
         "role": user.role
     })
+
+@bp.route("/auth/verify-token", methods=["POST"])
+def verify_token_login():
+    data = request.get_json()
+    if not data or "email" not in data or "token" not in data:
+        return jsonify({"error": "Email and token are required"}), 400
+
+    email = data["email"].strip().lower()
+    token = data["token"].strip()
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Check token (stored as hashed password)
+    if not check_password_hash(user.password_hash, token):
+        return jsonify({"error": "Invalid or expired token"}), 401
+
+    # Generate JWT for this user
+    access_token = create_access_token(identity=user.id, expires_delta=timedelta(hours=6))
+
+    return jsonify({
+        "message": "Login successful",
+        "access_token": access_token,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name
+        }
+    }), 200
+
+@bp.route("/auth/create-password", methods=["POST"])
+@jwt_required()
+def create_password():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+
+    if not data or "password" not in data:
+        return jsonify({"error": "Password is required"}), 400
+
+    password = data["password"]
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    user.set_password(password)
+    db.session.commit()
+
+    return jsonify({"message": "Password created successfully. You can now log in normally."}), 200
