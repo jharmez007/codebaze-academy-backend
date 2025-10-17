@@ -10,7 +10,9 @@ bp = Blueprint("enrollment", __name__)
 @jwt_required(optional=True)  # allow both logged in + guest users
 def enroll(course_id):
     user_id = get_jwt_identity()
-    course = Course.query.get_or_404(course_id)
+    course = Course.query.filter_by(id=course_id).first()
+    if not course:
+        return jsonify({"error": "Course not found"}), 404
 
     if user_id:  
         # Logged-in user
