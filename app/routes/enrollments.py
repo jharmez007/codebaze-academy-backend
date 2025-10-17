@@ -58,66 +58,60 @@ bp = Blueprint("enrollment", __name__)
 #         "enrolled_at": enrollment.enrolled_at.isoformat()
 #     }), 201
 
+
+@bp.route("/request", methods=["POST"])
+def request_enrollment():
+    data = request.get_json()
+    if not data or "email" not in data:
+        return jsonify({"error": "Email is required"}), 400
+
+    email = data["email"].strip().lower()
+    user = User.query.filter_by(email=email).first()
+
+    if user:
+        return jsonify({
+            "message": "User already exists. Please log in to continue.",
+            "login_required": True
+        }), 200
+
+    # Create temporary user with a one-time token
+    one_time_token = uuid.uuid4().hex[:8]
+    new_user = User(
+        full_name="Guest User",
+        email=email,
+        role="student",
+        is_active=True
+    )
+    new_user.set_password(one_time_token)
+    db.session.add(new_user)
+    db.session.commit()
+
+    # Normally, you'd send this token via email, but for now we return it
+    return jsonify({
+        "message": "Guest user created. Use this one-time token to log in.",
+        "email": email,
+        "one_time_token": one_time_token
+    }), 201
+
 @bp.route("/<int:course_id>", methods=["POST"])
-@jwt_required(optional=True)
-def enroll(course_id):
+@jwt_required()
+def enroll_course(course_id):
     user_id = get_jwt_identity()
     course = Course.query.filter_by(id=course_id).first()
+
     if not course:
         return jsonify({"error": "Course not found"}), 404
 
-    # If logged in
-    if user_id:
-        existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
-        if existing:
-            return jsonify({"message": "Already enrolled"}), 409
+    existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
+    if existing:
+        return jsonify({"message": "Already enrolled"}), 409
 
-        user = User.query.get(user_id)
-        enrollment = Enrollment(
-            user_id=user.id,
-            course_id=course.id,
-            progress=0.0,
-            status="active"
-        )
-        email = user.email
-
-    else:
-        # Guest user flow
-        data = request.get_json()
-        if not data or "email" not in data:
-            return jsonify({"error": "Email required for guest enrollment"}), 400
-
-        email = data["email"].strip().lower()
-
-        # Check if user already exists
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            # Create temporary guest user with one-time password/token
-            one_time_token = uuid.uuid4().hex[:8]  # simple random token
-            user = User(
-                full_name="Guest User",
-                email=email,
-                role="student",
-                is_active=True,
-            )
-            user.set_password(one_time_token)
-            db.session.add(user)
-            db.session.flush()  # ensures user.id is available before Enrollment
-
-            # TODO: Send token to email (e.g., via Flask-Mail)
-            # send_welcome_email(email, one_time_token)
-
-        # Check if already enrolled
-        existing = Enrollment.query.filter_by(user_id=user.id, course_id=course_id).first()
-        if existing:
-            return jsonify({"message": "Already enrolled with this email"}), 409
-
-        enrollment = Enrollment(
-            user_id=user.id,
-            course_id=course.id,
-            progress=0.0,
-            status="pending"  # until guest confirms
-        )
+    enrollment = Enrollment(
+        user_id=user_id,
+        course_id=course.id,
+        progress=0.0,
+        status="active"
+    )
 
     db.session.add(enrollment)
     db.session.commit()
@@ -126,11 +120,8 @@ def enroll(course_id):
         "message": "Enrollment successful",
         "course_id": course.id,
         "course_title": course.title,
-        "user_id": user.id,
-        "email": email,
-        "progress": enrollment.progress,
+        "user_id": user_id,
         "status": enrollment.status,
-        "one_time_token": one_time_token if not user_id else None,
         "enrolled_at": enrollment.enrolled_at.isoformat()
     }), 201
 
