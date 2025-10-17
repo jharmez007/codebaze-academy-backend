@@ -4,6 +4,7 @@ from app.models import User
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, create_refresh_token
 from werkzeug.security import check_password_hash
 from datetime import timedelta
+from app.models.user import PendingUser
 
 bp = Blueprint('auth', __name__)
 
@@ -99,27 +100,38 @@ def verify_token_login():
 
     email = data["email"].strip().lower()
     token = data["token"].strip()
-    user = User.query.filter_by(email=email).first()
+    pending = PendingUser.query.filter_by(email=email).first()
 
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+    if not pending:
+        return jsonify({"error": "No pending verification for this email"}), 404
 
-    # Check token (stored as hashed password)
-    if not check_password_hash(user.password_hash, token):
+    if not check_password_hash(pending.one_time_token, token):
         return jsonify({"error": "Invalid or expired token"}), 401
 
-    # Generate JWT for this user
-    access_token = create_access_token(identity=user.id, expires_delta=timedelta(hours=6))
+    # Move from PendingUser -> User
+    new_user = User(
+        full_name=pending.full_name,
+        email=pending.email,
+        role="student",
+        is_active=True
+    )
+    new_user.set_password(token)  # initial password = token
+    db.session.add(new_user)
+    db.session.delete(pending)
+    db.session.commit()
+
+    # Generate JWT
+    access_token = create_access_token(identity=new_user.id, expires_delta=timedelta(hours=6))
 
     return jsonify({
-        "message": "Login successful",
+        "message": "Verification successful. Account created.",
         "access_token": access_token,
         "user": {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.full_name
+            "id": new_user.id,
+            "email": new_user.email,
+            "full_name": new_user.full_name
         }
-    }), 200
+    }), 201
 
 @bp.route("/auth/create-password", methods=["POST"])
 @jwt_required()

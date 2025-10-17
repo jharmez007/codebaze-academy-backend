@@ -32,3 +32,15 @@ class Payment(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User', back_populates='payments')
+
+class PendingUser(db.Model):
+    __tablename__ = "pending_users"
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    full_name = db.Column(db.String(120), default="Guest User")
+    one_time_token = db.Column(db.String(120), nullable=False)  # hashed
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<PendingUser {self.email}>"
