@@ -108,7 +108,7 @@ def request_enrollment():
     existing_user = User.query.filter_by(email=email).first()
     if existing_user:
         return jsonify({
-            "status": "existing_user",
+            "state": "existing_user",
             "message": "User already exists. Please log in to continue.",
             "login_required": True
         }), 200
@@ -121,19 +121,19 @@ def request_enrollment():
         # Existing pending user — update token
         pending.one_time_token = one_time_token
         pending.created_at = datetime.utcnow()
-        status = "pending_user"
+        state = "pending_user"
         message = "Verification token re-sent. Use it to verify your email."
     else:
         # New pending user
         pending = PendingUser(email=email, one_time_token=one_time_token)
         db.session.add(pending)
-        status = "new_user"
+        state = "new_user"
         message = "Verification token sent. Use it to verify your email."
 
     db.session.commit()
 
     return jsonify({
-        "status": status,
+        "state": state,
         "message": message,
         "email": email,
         "one_time_token": one_time_token  # Normally sent by email
