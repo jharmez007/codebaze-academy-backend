@@ -62,6 +62,40 @@ bp = Blueprint("enrollment", __name__)
 #     }), 201
 
 
+# @bp.route("/request", methods=["POST"])
+# def request_enrollment():
+#     data = request.get_json()
+#     if not data or "email" not in data:
+#         return jsonify({"error": "Email is required"}), 400
+
+#     email = data["email"].strip().lower()
+#     existing_user = User.query.filter_by(email=email).first()
+#     if existing_user:
+#         return jsonify({
+#             "message": "User already exists. Please log in to continue.",
+#             "login_required": True
+#         }), 200
+
+#     # If email already pending, update token
+#     pending = PendingUser.query.filter_by(email=email).first()
+#     one_time_token = uuid.uuid4().hex[:8]
+#     hashed_token = generate_password_hash(one_time_token)
+
+#     if pending:
+#         pending.one_time_token = one_time_token
+#         pending.created_at = datetime.utcnow()
+#     else:
+#         pending = PendingUser(email=email, one_time_token=one_time_token)
+#         db.session.add(pending)
+
+#     db.session.commit()
+
+#     return jsonify({
+#         "message": "Verification token sent. Use it to verify your email.",
+#         "email": email,
+#         "one_time_token": one_time_token  # in real case, send via email
+#     }), 201
+
 @bp.route("/request", methods=["POST"])
 def request_enrollment():
     data = request.get_json()
@@ -69,31 +103,40 @@ def request_enrollment():
         return jsonify({"error": "Email is required"}), 400
 
     email = data["email"].strip().lower()
+
+    # CASE 1: Existing user — tell frontend to go to login
     existing_user = User.query.filter_by(email=email).first()
     if existing_user:
         return jsonify({
+            "status": "existing_user",
             "message": "User already exists. Please log in to continue.",
             "login_required": True
         }), 200
 
-    # If email already pending, update token
-    pending = PendingUser.query.filter_by(email=email).first()
+    # CASE 2/3: Pending or new user — send or refresh token
     one_time_token = uuid.uuid4().hex[:8]
-    hashed_token = generate_password_hash(one_time_token)
+    pending = PendingUser.query.filter_by(email=email).first()
 
     if pending:
+        # Existing pending user — update token
         pending.one_time_token = one_time_token
         pending.created_at = datetime.utcnow()
+        status = "pending_user"
+        message = "Verification token re-sent. Use it to verify your email."
     else:
+        # New pending user
         pending = PendingUser(email=email, one_time_token=one_time_token)
         db.session.add(pending)
+        status = "new_user"
+        message = "Verification token sent. Use it to verify your email."
 
     db.session.commit()
 
     return jsonify({
-        "message": "Verification token sent. Use it to verify your email.",
+        "status": status,
+        "message": message,
         "email": email,
-        "one_time_token": one_time_token  # in real case, send via email
+        "one_time_token": one_time_token  # Normally sent by email
     }), 201
 
 @bp.route("/<int:course_id>", methods=["POST"])
