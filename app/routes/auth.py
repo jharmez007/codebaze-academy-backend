@@ -105,7 +105,7 @@ def verify_token_login():
     if not pending:
         return jsonify({"error": "No pending verification for this email"}), 404
 
-    if not check_password_hash(pending.one_time_token, token):
+    if pending.one_time_token != token:
         return jsonify({"error": "Invalid or expired token"}), 401
 
     # Move from PendingUser -> User
