@@ -1,6 +1,9 @@
 from flask import Blueprint, request, jsonify
 from app.extensions import db
 from app.models import Enrollment, Course, User
+from app.models.user import PendingUser
+from werkzeug.security import generate_password_hash
+from datetime import datetime
 import uuid
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
@@ -66,31 +69,31 @@ def request_enrollment():
         return jsonify({"error": "Email is required"}), 400
 
     email = data["email"].strip().lower()
-    user = User.query.filter_by(email=email).first()
-
-    if user:
+    existing_user = User.query.filter_by(email=email).first()
+    if existing_user:
         return jsonify({
             "message": "User already exists. Please log in to continue.",
             "login_required": True
         }), 200
 
-    # Create temporary user with a one-time token
+    # If email already pending, update token
+    pending = PendingUser.query.filter_by(email=email).first()
     one_time_token = uuid.uuid4().hex[:8]
-    new_user = User(
-        full_name="Guest User",
-        email=email,
-        role="student",
-        is_active=True
-    )
-    new_user.set_password(one_time_token)
-    db.session.add(new_user)
+    hashed_token = generate_password_hash(one_time_token)
+
+    if pending:
+        pending.one_time_token = hashed_token
+        pending.created_at = datetime.utcnow()
+    else:
+        pending = PendingUser(email=email, one_time_token=hashed_token)
+        db.session.add(pending)
+
     db.session.commit()
 
-    # Normally, you'd send this token via email, but for now we return it
     return jsonify({
-        "message": "Guest user created. Use this one-time token to log in.",
+        "message": "Verification token sent. Use it to verify your email.",
         "email": email,
-        "one_time_token": one_time_token
+        "one_time_token": one_time_token  # in real case, send via email
     }), 201
 
 @bp.route("/<int:course_id>", methods=["POST"])
