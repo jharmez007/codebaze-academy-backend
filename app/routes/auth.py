@@ -115,13 +115,17 @@ def verify_token_login():
         role="student",
         is_active=True
     )
-    new_user.set_password(token)  # initial password = token
+    new_user.set_password(token)  # temporary password = token
     db.session.add(new_user)
     db.session.delete(pending)
     db.session.commit()
 
-    # Generate JWT
-    access_token = create_access_token(identity=new_user.id, expires_delta=timedelta(hours=6))
+    # ✅ FIXED: identity must be a string
+    access_token = create_access_token(
+        identity=str(new_user.id),
+        additional_claims={"role": new_user.role},
+        expires_delta=timedelta(hours=6)
+    )
 
     return jsonify({
         "message": "Verification successful. Account created.",
@@ -129,7 +133,8 @@ def verify_token_login():
         "user": {
             "id": new_user.id,
             "email": new_user.email,
-            "full_name": new_user.full_name
+            "full_name": new_user.full_name,
+            "role": new_user.role
         }
     }), 201
 
