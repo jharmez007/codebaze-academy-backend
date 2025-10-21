@@ -144,7 +144,7 @@ def create_password():
     user_id = get_jwt_identity()
     data = request.get_json() or {}
 
-    # ✅ Validate password
+    # Validate password
     password = data.get("password")
     if not password:
         return jsonify({"error": "Password is required"}), 400
@@ -152,17 +152,16 @@ def create_password():
     if len(password) < 6:
         return jsonify({"error": "Password must be at least 6 characters"}), 400
 
-    # ✅ Validate user existence
+    # Validate user existence
     user = User.query.get(user_id)
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # ✅ Optionally update full name
+    # Optionally update full name
     full_name = data.get("full_name")
     if full_name:
         user.full_name = full_name.strip().title()  # formats properly
 
-    # ✅ Set password
     user.set_password(password)
     db.session.commit()
 
