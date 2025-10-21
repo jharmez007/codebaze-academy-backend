@@ -172,6 +172,7 @@ def enroll_course(course_id):
         "course_title": course.title,
         "user_id": user_id,
         "status": enrollment.status,
+        "full_name": user.full_name,
         "password_created": bool(user.password_hash),
         "enrolled_at": enrollment.enrolled_at.isoformat()
     }), 201
