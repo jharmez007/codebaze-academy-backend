@@ -143,6 +143,10 @@ def request_enrollment():
 @jwt_required()
 def enroll_course(course_id):
     user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
     course = Course.query.filter_by(id=course_id).first()
 
     if not course:
@@ -168,6 +172,7 @@ def enroll_course(course_id):
         "course_title": course.title,
         "user_id": user_id,
         "status": enrollment.status,
+        "password_created": bool(user.password_hash),
         "enrolled_at": enrollment.enrolled_at.isoformat()
     }), 201
 
