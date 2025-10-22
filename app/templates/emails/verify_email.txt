@@ -1,0 +1,13 @@
+Hello {{ full_name }},
+
+Welcome to CodeBaze Academy!
+
+Please verify your email using the following code:
+
+🔑 {{ verification_code }}
+
+Enter this code in the app to activate your account.
+
+If you did not register for CodeBaze, please ignore this email.
+
+– CodeBaze Academy Support
