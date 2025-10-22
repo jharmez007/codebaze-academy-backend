@@ -145,7 +145,7 @@ def verify_token_login():
         role="student",
         is_active=True
     )
-    new_user.password_hash = pending.password_hash  # temporary password = token
+    new_user.password_hash = pending.password_hash
     db.session.add(new_user)
     db.session.delete(pending)
     db.session.commit()
@@ -216,10 +216,10 @@ def forgot_password():
     if not user:
         return jsonify({"error": "No account found with that email"}), 404
 
-    # Generate one-time reset token
-    reset_token = uuid.uuid4().hex[:8]
+    # ✅ Generate a secure token
+    reset_token = uuid.uuid4().hex
 
-    # Create or update pending reset record
+    # ✅ Create or update pending reset record
     pending = PendingUser.query.filter_by(email=email).first()
     if pending:
         pending.one_time_token = reset_token
@@ -230,31 +230,55 @@ def forgot_password():
 
     db.session.commit()
 
-    # 📨 Send email
-    subject = "Password Reset Request"
-    body = f"""
-    Hello {user.full_name or 'there'},
+    # ✅ Build reset link (frontend URL)
+    reset_link = f"https://yourfrontend.com/reset-password?token={reset_token}&email={email}"
 
-    We received a request to reset your password for your account on CodeBaze Academy.
-    
-    Use the following verification code to reset your password:
-    
-        🔑 {reset_token}
-    
-    If you didn’t request this, please ignore this email. 
-    The code will expire soon for your security.
-    
-    – CodeBaze Academy Support
-    """
+    # ✅ Send email
+    subject = "Reset Your Password - CodeBaze Academy"
+    text_body = render_template(
+        "emails/reset_password.txt",
+        full_name=user.full_name,
+        reset_link=reset_link
+    )
+    html_body = render_template(
+        "emails/reset_password.html",
+        full_name=user.full_name,
+        reset_link=reset_link
+    )
+
     try:
-        send_email(to=email, subject=subject, body=body)
+        send_email(to=email, subject=subject, body=text_body, html=html_body)
     except Exception as e:
         current_app.logger.error(f"Failed to send reset email: {e}")
         return jsonify({"error": "Unable to send reset email at the moment"}), 500
 
     return jsonify({
-        "message": "A password reset code has been sent to your email."
+        "message": "A password reset link has been sent to your email."
     }), 200
+
+@bp.route("/auth/verify-reset-token", methods=["POST"])
+def verify_reset_token():
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    token = data.get("token", "").strip()
+
+    if not all([email, token]):
+        return jsonify({"error": "Email and token are required"}), 400
+
+    pending = PendingUser.query.filter_by(email=email).first()
+    if not pending or pending.one_time_token != token:
+        return jsonify({"error": "Invalid or expired reset link"}), 401
+
+    # Optional: add expiry check (e.g., 15 mins)
+    if (datetime.utcnow() - pending.created_at).total_seconds() > 900:
+        db.session.delete(pending)
+        db.session.commit()
+        return jsonify({"error": "Reset link has expired"}), 401
+
+    return jsonify({
+        "message": "Reset token is valid."
+    }), 200
+
 
 @bp.route("/auth/reset-password", methods=["POST"])
 def reset_password():
@@ -277,9 +301,9 @@ def reset_password():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # Update password
+    # ✅ Update password
     user.set_password(new_password)
-    db.session.delete(pending)  # clear token after use
+    db.session.delete(pending)  # clear token after successful reset
     db.session.commit()
 
     return jsonify({
