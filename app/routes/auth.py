@@ -231,7 +231,7 @@ def forgot_password():
     db.session.commit()
 
     # ✅ Build reset link (frontend URL)
-    reset_link = f"https://yourfrontend.com/reset-password?token={reset_token}&email={email}"
+    reset_link = f"http://localhost:3000/reset-password?token={reset_token}&email={email}"
 
     # ✅ Send email
     subject = "Reset Your Password - CodeBaze Academy"
