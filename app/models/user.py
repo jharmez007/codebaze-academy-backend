@@ -41,6 +41,7 @@ class PendingUser(db.Model):
     full_name = db.Column(db.String(120), default="Guest User")
     one_time_token = db.Column(db.String(120), nullable=False)  # hashed
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    password_hash = db.Column(db.String(255), nullable=False)
 
     def __repr__(self):
         return f"<PendingUser {self.email}>"
