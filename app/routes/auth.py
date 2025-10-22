@@ -25,6 +25,9 @@ def register():
 
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "Email already exists"}), 409
+    existing = PendingUser.query.filter_by(email=email).first()
+    if existing:
+        return jsonify({"error": "Email already registered or pending verification."}), 400
 
     verification_token = str(random.randint(100000, 999999))
 
