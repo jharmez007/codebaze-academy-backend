@@ -1,8 +1,8 @@
-from flask import Blueprint, request, jsonify, render_template
+from flask import Blueprint, request, jsonify, render_template, current_app
 from app.extensions import db
 from app.models import User
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, create_refresh_token
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import timedelta
 from app.models.user import PendingUser
 from datetime import datetime
@@ -12,61 +12,35 @@ import random
 
 bp = Blueprint('auth', __name__)
 
-# Register endpoint
-# @bp.route('/register', methods=['POST'])
-# def register():
-#     data = request.get_json()
-#     if not data:
-#         return jsonify({"error": "Missing JSON data"}), 400
-
-#     full_name = data.get('full_name')
-#     email = data.get('email')
-#     password = data.get('password')
-#     role = data.get('role', 'student')
-
-#     if not all([full_name, email, password]):
-#         return jsonify({"error": "Missing required fields"}), 400
-
-#     if User.query.filter_by(email=email).first():
-#         return jsonify({"error": "Email already exists"}), 409
-
-#     user = User(full_name=full_name, email=email, role=role)
-#     user.set_password(password)
-
-#     db.session.add(user)
-#     db.session.commit()
-
-#     return jsonify({"message": "User registered successfully"}), 201
 @bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json() or {}
-
     full_name = data.get('full_name')
     email = data.get('email', '').strip().lower()
     password = data.get('password')
     role = data.get('role', 'student')
 
-    # Validate input
     if not all([full_name, email, password]):
         return jsonify({"error": "Missing required fields"}), 400
 
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "Email already exists"}), 409
 
-    # Generate verification token
     verification_token = str(random.randint(100000, 999999))
 
-    # Save pending registration
+    # ✅ Hash password before saving
+    password_hash = generate_password_hash(password)
+
     pending = PendingUser(
         full_name=full_name.strip().title(),
         email=email,
+        password_hash=password_hash,  # save hashed password
         one_time_token=verification_token,
         created_at=datetime.utcnow()
     )
     db.session.add(pending)
     db.session.commit()
 
-    # Send verification email using templates
     subject = "Verify Your Email - CodeBaze Academy"
     text_body = render_template(
         "emails/verify_email.txt",
@@ -171,7 +145,7 @@ def verify_token_login():
         role="student",
         is_active=True
     )
-    new_user.set_password(token)  # temporary password = token
+    new_user.password_hash = pending.password_hash  # temporary password = token
     db.session.add(new_user)
     db.session.delete(pending)
     db.session.commit()
