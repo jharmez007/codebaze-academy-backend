@@ -1,6 +1,6 @@
 from flask import Flask
 from .config import Config
-from .extensions import db, migrate, jwt
+from .extensions import db, migrate, jwt, mail
 from .routes import auth, student, admin, courses, enrollments, progress, comments
 from flask_cors import CORS
 
@@ -13,6 +13,7 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
+    mail.init_app(app)
 
     app.register_blueprint(auth.bp)
     app.register_blueprint(courses.bp, url_prefix='/courses')

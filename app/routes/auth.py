@@ -1,38 +1,94 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 from app.extensions import db
 from app.models import User
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, create_refresh_token
 from werkzeug.security import check_password_hash
 from datetime import timedelta
 from app.models.user import PendingUser
+from datetime import datetime
+from app.utils.mailer import send_email
+import uuid
+import random
 
 bp = Blueprint('auth', __name__)
 
 # Register endpoint
+# @bp.route('/register', methods=['POST'])
+# def register():
+#     data = request.get_json()
+#     if not data:
+#         return jsonify({"error": "Missing JSON data"}), 400
+
+#     full_name = data.get('full_name')
+#     email = data.get('email')
+#     password = data.get('password')
+#     role = data.get('role', 'student')
+
+#     if not all([full_name, email, password]):
+#         return jsonify({"error": "Missing required fields"}), 400
+
+#     if User.query.filter_by(email=email).first():
+#         return jsonify({"error": "Email already exists"}), 409
+
+#     user = User(full_name=full_name, email=email, role=role)
+#     user.set_password(password)
+
+#     db.session.add(user)
+#     db.session.commit()
+
+#     return jsonify({"message": "User registered successfully"}), 201
 @bp.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Missing JSON data"}), 400
+    data = request.get_json() or {}
 
     full_name = data.get('full_name')
-    email = data.get('email')
+    email = data.get('email', '').strip().lower()
     password = data.get('password')
     role = data.get('role', 'student')
 
+    # Validate input
     if not all([full_name, email, password]):
         return jsonify({"error": "Missing required fields"}), 400
 
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "Email already exists"}), 409
 
-    user = User(full_name=full_name, email=email, role=role)
-    user.set_password(password)
+    # Generate verification token
+    verification_token = str(random.randint(100000, 999999))
 
-    db.session.add(user)
+    # Save pending registration
+    pending = PendingUser(
+        full_name=full_name.strip().title(),
+        email=email,
+        one_time_token=verification_token,
+        created_at=datetime.utcnow()
+    )
+    db.session.add(pending)
     db.session.commit()
 
-    return jsonify({"message": "User registered successfully"}), 201
+    # Send verification email using templates
+    subject = "Verify Your Email - CodeBaze Academy"
+    text_body = render_template(
+        "emails/verify_email.txt",
+        full_name=full_name,
+        verification_code=verification_token
+    )
+    html_body = render_template(
+        "emails/verify_email.html",
+        full_name=full_name,
+        verification_code=verification_token
+    )
+
+    try:
+        send_email(to=email, subject=subject, body=text_body, html=html_body)
+    except Exception as e:
+        db.session.delete(pending)
+        db.session.commit()
+        return jsonify({"error": "Unable to send verification email"}), 500
+
+    return jsonify({
+        "message": "Registration successful. Please check your email to verify your account."
+    }), 201
 
 # Login endpoint
 @bp.route('/login', methods=['POST'])
@@ -172,4 +228,86 @@ def create_password():
             "email": user.email,
             "full_name": user.full_name
         }
+    }), 200
+
+@bp.route("/auth/forgot-password", methods=["POST"])
+def forgot_password():
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error": "No account found with that email"}), 404
+
+    # Generate one-time reset token
+    reset_token = uuid.uuid4().hex[:8]
+
+    # Create or update pending reset record
+    pending = PendingUser.query.filter_by(email=email).first()
+    if pending:
+        pending.one_time_token = reset_token
+        pending.created_at = datetime.utcnow()
+    else:
+        pending = PendingUser(email=email, one_time_token=reset_token)
+        db.session.add(pending)
+
+    db.session.commit()
+
+    # 📨 Send email
+    subject = "Password Reset Request"
+    body = f"""
+    Hello {user.full_name or 'there'},
+
+    We received a request to reset your password for your account on CodeBaze Academy.
+    
+    Use the following verification code to reset your password:
+    
+        🔑 {reset_token}
+    
+    If you didn’t request this, please ignore this email. 
+    The code will expire soon for your security.
+    
+    – CodeBaze Academy Support
+    """
+    try:
+        send_email(to=email, subject=subject, body=body)
+    except Exception as e:
+        current_app.logger.error(f"Failed to send reset email: {e}")
+        return jsonify({"error": "Unable to send reset email at the moment"}), 500
+
+    return jsonify({
+        "message": "A password reset code has been sent to your email."
+    }), 200
+
+@bp.route("/auth/reset-password", methods=["POST"])
+def reset_password():
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    token = data.get("token", "").strip()
+    new_password = data.get("password", "")
+
+    if not all([email, token, new_password]):
+        return jsonify({"error": "Email, token, and password are required"}), 400
+
+    if len(new_password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    pending = PendingUser.query.filter_by(email=email).first()
+    if not pending or pending.one_time_token != token:
+        return jsonify({"error": "Invalid or expired reset token"}), 401
+
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Update password
+    user.set_password(new_password)
+    db.session.delete(pending)  # clear token after use
+    db.session.commit()
+
+    return jsonify({
+        "message": "Password reset successful. You can now log in with your new password."
     }), 200
