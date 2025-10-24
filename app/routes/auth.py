@@ -44,7 +44,8 @@ def register():
             email=email,
             password_hash=password_hash,
             one_time_token=verification_token,
-            created_at=datetime.utcnow()
+            created_at=datetime.utcnow(),
+            role=role
         )
         db.session.add(pending)
         db.session.commit()
@@ -96,7 +97,7 @@ def resend_verification():
     if not pending:
         return jsonify({"error": "No pending registration found for this email."}), 404
 
-    # 3️⃣ Generate new token and update record
+    # Generate new token and update record
     new_token = str(random.randint(100000, 999999))
     pending.one_time_token = new_token
     pending.created_at = datetime.utcnow()
@@ -202,7 +203,7 @@ def verify_token_login():
     new_user = User(
         full_name=pending.full_name,
         email=pending.email,
-        role="student",
+        role=pending.role,
         is_active=True
     )
     new_user.password_hash = pending.password_hash
