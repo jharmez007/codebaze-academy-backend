@@ -12,6 +12,61 @@ import random
 
 bp = Blueprint('auth', __name__)
 
+# @bp.route('/register', methods=['POST'])
+# def register():
+#     data = request.get_json() or {}
+#     full_name = data.get('full_name')
+#     email = data.get('email', '').strip().lower()
+#     password = data.get('password')
+#     role = data.get('role', 'student')
+
+#     if not all([full_name, email, password]):
+#         return jsonify({"error": "Missing required fields"}), 400
+
+#     if User.query.filter_by(email=email).first():
+#         return jsonify({"error": "Email already exists"}), 409
+#     existing = PendingUser.query.filter_by(email=email).first()
+#     if existing:
+#         return jsonify({"error": "Email already registered or pending verification."}), 400
+
+#     verification_token = str(random.randint(100000, 999999))
+
+#     # ✅ Hash password before saving
+#     password_hash = generate_password_hash(password)
+
+#     pending = PendingUser(
+#         full_name=full_name.strip().title(),
+#         email=email,
+#         password_hash=password_hash,  # save hashed password
+#         one_time_token=verification_token,
+#         created_at=datetime.utcnow()
+#     )
+#     db.session.add(pending)
+#     db.session.commit()
+
+#     subject = "Verify Your Email - CodeBaze Academy"
+#     text_body = render_template(
+#         "emails/verify_email.txt",
+#         full_name=full_name,
+#         verification_code=verification_token
+#     )
+#     html_body = render_template(
+#         "emails/verify_email.html",
+#         full_name=full_name,
+#         verification_code=verification_token
+#     )
+
+#     try:
+#         send_email(to=email, subject=subject, body=text_body, html=html_body)
+#     except Exception as e:
+#         db.session.delete(pending)
+#         db.session.commit()
+#         return jsonify({"error": "Unable to send verification email"}), 500
+
+#     return jsonify({
+#         "message": "Registration successful. Please check your email to verify your account."
+#     }), 201
+
 @bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json() or {}
@@ -30,6 +85,7 @@ def register():
 
     # 3️⃣ Check if user pending verification
     pending = PendingUser.query.filter_by(email=email).first()
+    is_new = False
 
     # If pending exists, reuse existing token
     if pending:
@@ -47,6 +103,7 @@ def register():
         )
         db.session.add(pending)
         db.session.commit()
+        is_new = True
 
     # 4️⃣ Send verification email
     subject = "Verify Your Email - CodeBaze Academy"
@@ -64,16 +121,63 @@ def register():
     try:
         send_email(to=email, subject=subject, body=text_body, html=html_body)
     except Exception as e:
-        # rollback only if new pending was created this time
-        if not PendingUser.query.filter_by(email=email).first():
+        if is_new:
             db.session.rollback()
-        return jsonify({"error": "Unable to send verification email"}), 500
+        print("Email send error:", str(e))
+        return jsonify({"error": f"Unable to send verification email: {str(e)}"}), 500
 
     return jsonify({
-        "message": "Verification email sent successfully."
-        if pending else
-        "Registration successful. Please check your email to verify your account."
+        "message": (
+            "Registration successful. Please check your email to verify your account."
+            if is_new
+            else "Verification email resent successfully."
+        )
     }), 200
+
+@bp.route('/resend-verification', methods=['POST'])
+def resend_verification():
+    data = request.get_json() or {}
+    email = data.get('email', '').strip().lower()
+
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+
+    # 1️⃣ Check if already verified user
+    if User.query.filter_by(email=email).first():
+        return jsonify({"error": "This email is already verified. Please log in."}), 400
+
+    # 2️⃣ Check pending user
+    pending = PendingUser.query.filter_by(email=email).first()
+    if not pending:
+        return jsonify({"error": "No pending registration found for this email."}), 404
+
+    # 3️⃣ Generate new token and update record
+    new_token = str(random.randint(100000, 999999))
+    pending.one_time_token = new_token
+    pending.created_at = datetime.utcnow()
+    db.session.commit()
+
+    # 4️⃣ Resend email
+    subject = "Resend Verification Code - CodeBaze Academy"
+    text_body = render_template(
+        "emails/verify_email.txt",
+        full_name=pending.full_name,
+        verification_code=new_token
+    )
+    html_body = render_template(
+        "emails/verify_email.html",
+        full_name=pending.full_name,
+        verification_code=new_token
+    )
+
+    try:
+        send_email(to=email, subject=subject, body=text_body, html=html_body)
+    except Exception as e:
+        db.session.rollback()
+        print("Resend email error:", str(e))
+        return jsonify({"error": f"Unable to resend verification email: {str(e)}"}), 500
+
+    return jsonify({"message": "A new verification code has been sent to your email."}), 200
 
 # Login endpoint
 @bp.route('/login', methods=['POST'])
@@ -227,22 +331,30 @@ def forgot_password():
     if not user:
         return jsonify({"error": "No account found with that email"}), 404
 
-    # ✅ Generate a secure token
+    # ✅ Generate a secure reset token
     reset_token = uuid.uuid4().hex
 
-    # ✅ Create or update pending reset record
+    # ✅ Create or update pending reset record (reuse PendingUser table)
     pending = PendingUser.query.filter_by(email=email).first()
     if pending:
         pending.one_time_token = reset_token
         pending.created_at = datetime.utcnow()
     else:
-        pending = PendingUser(email=email, one_time_token=reset_token)
+        pending = PendingUser(
+            email=email,
+            full_name=user.full_name,
+            one_time_token=reset_token,
+            created_at=datetime.utcnow()
+        )
         db.session.add(pending)
 
     db.session.commit()
 
-    # ✅ Build reset link (frontend URL)
-    reset_link = f"http://localhost:3000/reset-password?token={reset_token}&email={email}"
+    # ✅ Determine correct frontend URL based on role
+    if user.role == "admin":
+        reset_link = f"http://localhost:3000/admin-reset-password?token={reset_token}&email={email}"
+    else:
+        reset_link = f"http://localhost:3000/reset-password?token={reset_token}&email={email}"
 
     # ✅ Send email
     subject = "Reset Your Password - CodeBaze Academy"
@@ -264,7 +376,7 @@ def forgot_password():
         return jsonify({"error": "Unable to send reset email at the moment"}), 500
 
     return jsonify({
-        "message": "A password reset link has been sent to your email."
+        "message": f"A password reset link has been sent to your {user.role} email."
     }), 200
 
 @bp.route("/auth/verify-reset-token", methods=["POST"])
