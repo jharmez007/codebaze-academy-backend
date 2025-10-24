@@ -12,61 +12,6 @@ import random
 
 bp = Blueprint('auth', __name__)
 
-# @bp.route('/register', methods=['POST'])
-# def register():
-#     data = request.get_json() or {}
-#     full_name = data.get('full_name')
-#     email = data.get('email', '').strip().lower()
-#     password = data.get('password')
-#     role = data.get('role', 'student')
-
-#     if not all([full_name, email, password]):
-#         return jsonify({"error": "Missing required fields"}), 400
-
-#     if User.query.filter_by(email=email).first():
-#         return jsonify({"error": "Email already exists"}), 409
-#     existing = PendingUser.query.filter_by(email=email).first()
-#     if existing:
-#         return jsonify({"error": "Email already registered or pending verification."}), 400
-
-#     verification_token = str(random.randint(100000, 999999))
-
-#     # ✅ Hash password before saving
-#     password_hash = generate_password_hash(password)
-
-#     pending = PendingUser(
-#         full_name=full_name.strip().title(),
-#         email=email,
-#         password_hash=password_hash,  # save hashed password
-#         one_time_token=verification_token,
-#         created_at=datetime.utcnow()
-#     )
-#     db.session.add(pending)
-#     db.session.commit()
-
-#     subject = "Verify Your Email - CodeBaze Academy"
-#     text_body = render_template(
-#         "emails/verify_email.txt",
-#         full_name=full_name,
-#         verification_code=verification_token
-#     )
-#     html_body = render_template(
-#         "emails/verify_email.html",
-#         full_name=full_name,
-#         verification_code=verification_token
-#     )
-
-#     try:
-#         send_email(to=email, subject=subject, body=text_body, html=html_body)
-#     except Exception as e:
-#         db.session.delete(pending)
-#         db.session.commit()
-#         return jsonify({"error": "Unable to send verification email"}), 500
-
-#     return jsonify({
-#         "message": "Registration successful. Please check your email to verify your account."
-#     }), 201
-
 @bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json() or {}
@@ -75,15 +20,15 @@ def register():
     password = data.get('password')
     role = data.get('role', 'student')
 
-    # 1️⃣ Validate input
+    #Validate input
     if not all([full_name, email, password]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    # 2️⃣ Check if user already verified
+    # Check if user already verified
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "Email already exists."}), 409
 
-    # 3️⃣ Check if user pending verification
+    # Check if user pending verification
     pending = PendingUser.query.filter_by(email=email).first()
     is_new = False
 
@@ -105,7 +50,7 @@ def register():
         db.session.commit()
         is_new = True
 
-    # 4️⃣ Send verification email
+    # Send verification email
     subject = "Verify Your Email - CodeBaze Academy"
     text_body = render_template(
         "emails/verify_email.txt",
