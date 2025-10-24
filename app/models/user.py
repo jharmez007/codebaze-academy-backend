@@ -41,6 +41,7 @@ class PendingUser(db.Model):
     full_name = db.Column(db.String(120), default="Guest User")
     one_time_token = db.Column(db.String(120), nullable=False)  # hashed
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    role = db.Column(db.Enum('student', 'admin'), nullable=False, default='student')
     password_hash = db.Column(db.String(255), nullable=True)
 
     def __repr__(self):
