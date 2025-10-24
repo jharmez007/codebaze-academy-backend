@@ -12,6 +12,61 @@ import random
 
 bp = Blueprint('auth', __name__)
 
+# @bp.route('/register', methods=['POST'])
+# def register():
+#     data = request.get_json() or {}
+#     full_name = data.get('full_name')
+#     email = data.get('email', '').strip().lower()
+#     password = data.get('password')
+#     role = data.get('role', 'student')
+
+#     if not all([full_name, email, password]):
+#         return jsonify({"error": "Missing required fields"}), 400
+
+#     if User.query.filter_by(email=email).first():
+#         return jsonify({"error": "Email already exists"}), 409
+#     existing = PendingUser.query.filter_by(email=email).first()
+#     if existing:
+#         return jsonify({"error": "Email already registered or pending verification."}), 400
+
+#     verification_token = str(random.randint(100000, 999999))
+
+#     # ✅ Hash password before saving
+#     password_hash = generate_password_hash(password)
+
+#     pending = PendingUser(
+#         full_name=full_name.strip().title(),
+#         email=email,
+#         password_hash=password_hash,  # save hashed password
+#         one_time_token=verification_token,
+#         created_at=datetime.utcnow()
+#     )
+#     db.session.add(pending)
+#     db.session.commit()
+
+#     subject = "Verify Your Email - CodeBaze Academy"
+#     text_body = render_template(
+#         "emails/verify_email.txt",
+#         full_name=full_name,
+#         verification_code=verification_token
+#     )
+#     html_body = render_template(
+#         "emails/verify_email.html",
+#         full_name=full_name,
+#         verification_code=verification_token
+#     )
+
+#     try:
+#         send_email(to=email, subject=subject, body=text_body, html=html_body)
+#     except Exception as e:
+#         db.session.delete(pending)
+#         db.session.commit()
+#         return jsonify({"error": "Unable to send verification email"}), 500
+
+#     return jsonify({
+#         "message": "Registration successful. Please check your email to verify your account."
+#     }), 201
+
 @bp.route('/register', methods=['POST'])
 def register():
     data = request.get_json() or {}
@@ -64,11 +119,9 @@ def register():
     try:
         send_email(to=email, subject=subject, body=text_body, html=html_body)
     except Exception as e:
-        # rollback only if new pending was created this time
-        if not PendingUser.query.filter_by(email=email).first():
-            db.session.rollback()
-        return jsonify({"error": "Unable to send verification email"}), 500
-
+        db.session.rollback()
+        print("Email send error:", str(e))  # or use current_app.logger.error(str(e))
+        return jsonify({"error": f"Unable to send verification email: {str(e)}"}), 500
     return jsonify({
         "message": "Verification email sent successfully."
         if pending else
