@@ -153,7 +153,7 @@ def initiate_payment():
     payload = {
         "email": email,
         "amount": int(amount) * 100,  # convert to kobo
-        "callback_url": "http://localhost:5000/payments/callback",
+        "callback_url": "http://localhost:5000/payments/verify",
     }
 
     response = requests.post(
