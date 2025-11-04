@@ -1,7 +1,8 @@
 from flask import Blueprint, request, jsonify
 from app.extensions import db
 from werkzeug.utils import secure_filename
-from app.models import Course, Lesson
+from app.models import Course, Lesson, Enrollment
+from app.models.user import Payment
 from app.models.course import Section
 from app.models.lesson import Quiz
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -107,10 +108,57 @@ def list_courses_all():
     return jsonify(result)
 
 # Get details of a single course
+# @bp.route("/<int:course_id>", methods=["GET"])
+# @jwt_required(optional=True)  # allow public view
+# def get_course(course_id):
+#     course = Course.query.get_or_404(course_id)
+
+#     response = {
+#         "id": course.id,
+#         "title": course.title,
+#         "slug": course.slug,
+#         "description": course.description,
+#         "long_description": course.long_description,
+#         "price": course.price,
+#         "is_published": course.is_published,
+#         "total_lessons": course.total_lessons,
+#         "created_at": course.created_at.isoformat(),
+#         "image": course.image,
+#         "sections": []
+#     }
+
+#     for sub in course.sections:
+#         sub_data = {"id": sub.id, "name": sub.name, "description": sub.description, "lessons": []}
+
+#         for lesson in sub.lessons:
+#             lesson_data = {"id": lesson.id, "title": lesson.title, "duration": lesson.duration, "size": lesson.size}
+#             sub_data["lessons"].append(lesson_data)
+
+#         response["sections"].append(sub_data)
+
+#     return jsonify(response)
 @bp.route("/<int:course_id>", methods=["GET"])
-@jwt_required(optional=True)  # allow public view
+@jwt_required(optional=True)
 def get_course(course_id):
     course = Course.query.get_or_404(course_id)
+    user_id = get_jwt_identity()
+
+    is_paid = False  # Default to unpaid
+
+    if user_id:
+        # Check if the user has made a successful payment for this course
+        payment = (
+            Payment.query.join(Enrollment, Enrollment.payment_reference == Payment.reference)
+            .filter(
+                Payment.user_id == user_id,
+                Payment.status == "successful",
+                Enrollment.course_id == course.id
+            )
+            .first()
+        )
+
+        if payment:
+            is_paid = True
 
     response = {
         "id": course.id,
@@ -123,16 +171,25 @@ def get_course(course_id):
         "total_lessons": course.total_lessons,
         "created_at": course.created_at.isoformat(),
         "image": course.image,
-        "sections": []
+        "sections": [],
+        "is_paid": is_paid  # ✅ Add payment status
     }
 
     for sub in course.sections:
-        sub_data = {"id": sub.id, "name": sub.name, "description": sub.description, "lessons": []}
-
+        sub_data = {
+            "id": sub.id,
+            "name": sub.name,
+            "description": sub.description,
+            "lessons": []
+        }
         for lesson in sub.lessons:
-            lesson_data = {"id": lesson.id, "title": lesson.title, "duration": lesson.duration, "size": lesson.size}
+            lesson_data = {
+                "id": lesson.id,
+                "title": lesson.title,
+                "duration": lesson.duration,
+                "size": lesson.size
+            }
             sub_data["lessons"].append(lesson_data)
-
         response["sections"].append(sub_data)
 
     return jsonify(response)
