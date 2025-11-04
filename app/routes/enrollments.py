@@ -5,6 +5,7 @@ from app.models.user import PendingUser
 from werkzeug.security import generate_password_hash
 from datetime import datetime
 import uuid
+import random
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.mailer import send_email
 
@@ -27,7 +28,7 @@ def request_enrollment():
         }), 200
 
     # CASE 2/3: Pending or new user — send or refresh token
-    one_time_token = uuid.uuid4().hex[:8]
+    one_time_token = f"{random.randint(100000, 999999)}"
     pending = PendingUser.query.filter_by(email=email).first()
 
     if pending:
