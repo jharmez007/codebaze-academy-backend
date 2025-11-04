@@ -236,16 +236,22 @@ def verify_payment():
     # ✅ Update payment in DB
     payment = Payment.query.filter_by(reference=reference).first()
     if payment:
-        payment.status = status
+        payment.status = "successful" if status == "success" else "failed"
         payment.amount = amount
-        db.session.commit()
 
-    # ✅ If payment successful, update enrollment
     if status == "success" and course_id:
         enrollment = Enrollment.query.filter_by(payment_reference=reference).first()
         if enrollment:
             enrollment.status = "paid"
-            db.session.commit()
+
+    db.session.commit()
+
+    # # ✅ If payment successful, update enrollment
+    # if status == "success" and course_id:
+    #     enrollment = Enrollment.query.filter_by(payment_reference=reference).first()
+    #     if enrollment:
+    #         enrollment.status = "paid"
+    #         db.session.commit()
 
     # ✅ Redirect user back to your frontend
     return redirect(f"{redirect_url}?status={status}&reference={reference}")
