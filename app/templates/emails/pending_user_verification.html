@@ -1,23 +1,37 @@
 <!DOCTYPE html>
 <html>
-  <body style="font-family: Arial, sans-serif; color: #333;">
-    <h2>Verify Your Email</h2>
-    <p>Hello,</p>
-    <p>Here’s your verification code for enrollment:</p>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Your Email</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+  </head>
+  <body style="margin:0; padding:0; font-family:'Poppins', sans-serif; background-color:#121212; color:#ffffff;">
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+      <tr>
+        <td align="center" style="padding: 20px;">
+          <!-- Container -->
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width:600px; background-color:#1e1e1e; border-radius:10px; padding:20px;">
+            <tr>
+              <td style="text-align:left;">
+                <h2 style="margin:0 0 20px 0; color:#00bf63; font-size:24px;">Verify Your Email</h2>
+                <p style="margin:0 0 15px 0; line-height:1.6; color:#e0e0e0;">Hello,</p>
+                <p style="margin:0 0 20px 0; line-height:1.6; color:#e0e0e0;">Here’s your verification code for enrollment:</p>
 
-    <h1 style="background: #f4f4f4; padding: 10px 20px; display: inline-block;">
-      {{ token }}
-    </h1>
+                <p style="margin:0 0 20px 0; display:inline-block; background-color:#333333; color:#00bf63; padding:15px 25px; border-radius:8px; font-size:28px; letter-spacing:2px; font-weight:600;">
+                  {{ token }}
+                </p>
 
-    <p>Or you can verify directly by clicking the link below:</p>
-    <p>
-      <a href="{{ verify_url }}" 
-         style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
-         Verify Email
-      </a>
-    </p>
+                <p style="margin:0 0 15px 0; line-height:1.6; color:#e0e0e0;">This code will expire in 1 hour.</p>
+                <p style="margin:0 0 20px 0; line-height:1.6; color:#e0e0e0;">Best regards,<br>Code Baze Academy Team</p>
 
-    <p>This code will expire in 1 hour.</p>
-    <p>Best regards,<br>ERPP Team</p>
+                <p style="margin:30px 0 0 0; font-size:12px; color:#aaaaaa; line-height:1.4;">&copy; {{ year }} Code Baze Academy. All rights reserved.</p>
+              </td>
+            </tr>
+          </table>
+          <!-- End Container -->
+        </td>
+      </tr>
+    </table>
   </body>
 </html>
