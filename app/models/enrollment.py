@@ -14,11 +14,11 @@ class Enrollment(db.Model):
     student = db.relationship('User', back_populates='enrollments')
     course = db.relationship('Course', back_populates='enrollments')
 
-class Payment(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer)
-    course_id = db.Column(db.Integer)
-    amount = db.Column(db.Integer)
-    reference = db.Column(db.String(120), unique=True)
-    status = db.Column(db.String(20))  # pending, success, failed
-    created_at = db.Column(db.DateTime, default=db.func.now()) 
+# class Payment(db.Model):
+#     id = db.Column(db.Integer, primary_key=True)
+#     user_id = db.Column(db.Integer)
+#     course_id = db.Column(db.Integer)
+#     amount = db.Column(db.Integer)
+#     reference = db.Column(db.String(120), unique=True)
+#     status = db.Column(db.String(20))  # pending, success, failed
+#     created_at = db.Column(db.DateTime, default=db.func.now()) 
