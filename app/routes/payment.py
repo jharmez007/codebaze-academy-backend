@@ -107,7 +107,7 @@ from flask import Blueprint, request, jsonify, redirect, url_for
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.extensions import db
 from app.models import Enrollment, User, Course
-from app.models.enrollment import Payment
+from app.models.user import Payment
 
 bp = Blueprint("payments", __name__)
 
