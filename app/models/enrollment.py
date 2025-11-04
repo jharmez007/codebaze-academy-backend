@@ -15,6 +15,9 @@ class Enrollment(db.Model):
     course = db.relationship('Course', back_populates='enrollments')
 
 class Payment(db.Model):
+    __tablename__ = "payment"
+    __table_args__ = {'extend_existing': True}
+    
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer)
     course_id = db.Column(db.Integer)
