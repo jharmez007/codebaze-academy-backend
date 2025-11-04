@@ -84,8 +84,9 @@ def enroll_course(course_id):
         return jsonify({"error": "Course not found"}), 404
 
     existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
-    if existing:
-        return jsonify({"message": "Already enrolled"}), 409
+    # If user already enrolled and active → block
+    if existing and existing.status == "active":
+        return jsonify({"message": "Already enrolled and active"}), 409
 
     enrollment = Enrollment(
         user_id=user_id,
