@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template, current_app
 from app.extensions import db
 from app.models import Enrollment, Course, User
 from app.models.user import PendingUser
@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash
 from datetime import datetime
 import uuid
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from app.utils.mailer import send_email
 
 bp = Blueprint("enrollment", __name__)
 
@@ -41,11 +42,30 @@ def request_enrollment():
         message = "Verification token sent. Use it to verify your email."
 
     db.session.commit()
+    
+    try:
+        html_body = render_template(
+            "emails/pending_user_verification.html",
+            token=one_time_token,
+            email=email,
+            verify_url=f"http://localhost:3000/verify"
+        )
+
+        send_email(
+            subject="Your Verification Code",
+            recipients=[email],
+            html_body=html_body
+        )
+
+    except Exception as e:
+        current_app.logger.error(f"Error sending verification email: {e}")
+        return jsonify({
+            "message": "Error sending email, please try again later."
+        }), 500
 
     return jsonify({
         "message": message,
-        "email": email,
-        "one_time_token": one_time_token  # Normally sent by email
+        "email": email
     }), 201
 
 @bp.route("/<int:course_id>", methods=["POST"])
