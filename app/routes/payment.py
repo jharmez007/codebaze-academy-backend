@@ -175,6 +175,7 @@ def initiate_payment():
     # ✅ Save a Payment record (pending)
     payment = Payment(
         user_id=user_id,
+        provider="paystack", 
         amount=amount,
         reference=reference,
         status="pending",
