@@ -97,6 +97,7 @@ def enroll_course(course_id):
     db.session.add(enrollment)
     db.session.commit()
 
+    has_password = bool(user.password_hash and user.password_hash.strip())
     return jsonify({
         "message": "Enrollment successful",
         "course_id": course.id,
@@ -104,6 +105,7 @@ def enroll_course(course_id):
         "user_id": user_id,
         "status": enrollment.status,
         "full_name": user.full_name,
+        "has_password": has_password,
         "enrolled_at": enrollment.enrolled_at.isoformat()
     }), 201
 
