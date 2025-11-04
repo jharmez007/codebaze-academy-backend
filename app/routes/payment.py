@@ -149,14 +149,14 @@ def initiate_payment():
         "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
         "Content-Type": "application/json",
     }
-
+    slug = course.title.lower().replace(" ", "-")
     payload = {
         "email": email,
         "amount": int(amount) * 100,  # convert to kobo
-        "callback_url": "http://localhost:5000/payments/verify",  # this hits backend for verification
         "metadata": {
-            "course_id": course_id,
-            "redirect_url": f"http://localhost:3000/courses/{course_id}/confirmation"  # frontend route
+            "slug": slug,
+            "course_id": course.id,
+            "redirect_url": f"http://localhost:3000/checkout/{slug}"  # frontend route
         }
     }
 
