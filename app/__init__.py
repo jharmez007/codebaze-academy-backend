@@ -1,7 +1,7 @@
 from flask import Flask
 from .config import Config
 from .extensions import db, migrate, jwt, mail
-from .routes import auth, student, admin, courses, enrollments, progress, comments
+from .routes import auth, student, admin, courses, enrollments, progress, comments, payment
 from flask_cors import CORS
 
 def create_app():
@@ -21,6 +21,7 @@ def create_app():
     app.register_blueprint(progress.bp, url_prefix="/progress")
     app.register_blueprint(comments.bp, url_prefix="/comments")
     app.register_blueprint(student.bp, url_prefix='/students')
+    app.register_blueprint(payment.bp, url_prefix="/payments")
     # app.register_blueprint(admin.bp, url_prefix='/admin')
 
     return app
