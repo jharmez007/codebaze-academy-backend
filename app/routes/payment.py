@@ -225,7 +225,7 @@ def verify_payment():
     amount = trx_data["amount"] / 100  # convert kobo to naira
     metadata = trx_data.get("metadata", {})
     course_id = metadata.get("course_id")
-    redirect_url = metadata.get("redirect_url") or "http://localhost:3000/dashboard"
+    redirect_url = metadata.get("redirect_url") or "http://localhost:3000/products"
 
     # ✅ Update payment in DB
     payment = Payment.query.filter_by(reference=reference).first()
