@@ -208,63 +208,41 @@ def initiate_payment():
 # ----------------------------------------------------------
 @bp.route("/verify", methods=["GET"])
 def verify_payment():
-    """Verify payment with Paystack"""
     reference = request.args.get("reference")
+
     if not reference:
-        return jsonify({"error": "No reference provided"}), 400
+        return jsonify({"error": "Missing reference"}), 400
 
     headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
-    response = requests.get(
-        f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}",
-        headers=headers,
-    )
+    response = requests.get(f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}", headers=headers)
+    data = response.json()
 
-    result = response.json()
-    if response.status_code != 200 or not result.get("status"):
-        return jsonify({
-            "error": "Failed to verify payment",
-            "details": result,
-        }), 400
+    if not data.get("status"):
+        return jsonify({"error": "Payment verification failed"}), 400
 
-    data = result["data"]
-    status = data.get("status")
+    trx_data = data["data"]
+    status = trx_data["status"]
+    amount = trx_data["amount"] / 100  # convert kobo to naira
+    metadata = trx_data.get("metadata", {})
+    course_id = metadata.get("course_id")
+    redirect_url = metadata.get("redirect_url") or "http://localhost:3000/dashboard"
 
+    # ✅ Update payment in DB
     payment = Payment.query.filter_by(reference=reference).first()
-    enrollment = Enrollment.query.filter_by(payment_reference=reference).first()
+    if payment:
+        payment.status = status
+        payment.amount = amount
+        db.session.commit()
 
-    if status == "success":
-        # ✅ Mark payment as successful
-        if payment:
-            payment.status = "success"
-
-        # ✅ Update enrollment
+    # ✅ If payment successful, update enrollment
+    if status == "success" and course_id:
+        enrollment = Enrollment.query.filter_by(payment_reference=reference).first()
         if enrollment:
             enrollment.status = "paid"
-            enrollment.enrolled_at = datetime.utcnow()
+            db.session.commit()
 
-        db.session.commit()
-
-        return jsonify({
-            "message": "✅ Payment verified successfully",
-            "data": data
-        }), 200
-
-    elif status == "failed":
-        if payment:
-            payment.status = "failed"
-        if enrollment:
-            enrollment.status = "failed"
-        db.session.commit()
-
-        return jsonify({
-            "message": "❌ Payment failed",
-            "data": data
-        }), 400
-
-    return jsonify({
-        "message": "Payment not completed yet",
-        "data": data
-    }), 400
+    # ✅ Redirect user back to your frontend
+    return redirect(f"{redirect_url}?status={status}&reference={reference}")
 
 
 # ----------------------------------------------------------
