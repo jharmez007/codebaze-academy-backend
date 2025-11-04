@@ -52,9 +52,10 @@ def request_enrollment():
         )
 
         send_email(
+            to=email,
             subject="Your Verification Code",
-            recipients=[email],
-            html_body=html_body
+            body=f"Your verification code is {one_time_token}",
+            html=html_body
         )
 
     except Exception as e:
