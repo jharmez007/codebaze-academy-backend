@@ -10,6 +10,7 @@ class Coupon(db.Model):
     discount_value = db.Column(db.Float, nullable=False)  # either amount or percent value
 
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)  # for user-specific coupons
+    course_id = db.Column(db.Integer, db.ForeignKey("course.id"), nullable=True)
     max_uses = db.Column(db.Integer, nullable=True)  # number of total allowed uses
     used_count = db.Column(db.Integer, default=0)
     valid_from = db.Column(db.DateTime, default=datetime.utcnow)
