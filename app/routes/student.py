@@ -17,7 +17,7 @@ def get_all_students():
     for s in students:
         result.append({
             "id": s.id,
-            "name": s.name,
+            "name": s.full_name,
             "email": s.email,
             "is_active": s.is_active,
             "date_joined": s.created_at,
