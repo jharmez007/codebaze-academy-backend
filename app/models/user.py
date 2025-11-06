@@ -15,6 +15,7 @@ class User(db.Model):
     progress = db.relationship('Progress', back_populates='student')
     comments = db.relationship('Comment', back_populates='user')
     payments = db.relationship('Payment', back_populates='user')
+    coupons = db.relationship("Coupon", back_populates="user", lazy=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
