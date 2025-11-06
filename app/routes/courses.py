@@ -450,13 +450,15 @@ def update_course(course_id):
     except:
         return jsonify({"error": "Invalid JSON format"}), 400
 
-    # Update base fields
-    course.title = data.get("title", course.title)
+    # ✅ Update base fields
+    new_title = data.get("title", course.title)
+    course.title = new_title
+    course.slug = slugify(new_title)  # ✅ Always update slug to match title/topic
     course.description = data.get("description", course.description)
     course.price = data.get("price", course.price)
     course.long_description = data.get("long_description", course.long_description)
 
-    # Handle new course image if uploaded
+    # ✅ Handle new course image if uploaded
     image_file = request.files.get("image")
     if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
         filename = secure_filename(image_file.filename)
@@ -464,20 +466,19 @@ def update_course(course_id):
         image_file.save(image_path)
         course.image = image_path
 
-    # Handle sections & lessons
+    # ✅ Handle sections & lessons
     sections_data = data.get("sections", [])
     for i, sub in enumerate(sections_data):
         section_id = sub.get("id")
         if section_id:
             section = Section.query.filter_by(id=section_id, course_id=course.id).first()
             if section:
-                # update existing section
                 section.name = sub.get("name", section.name)
+                section.slug = slugify(section.name)  # ✅ keep section slug updated
                 section.description = sub.get("description", section.description)
             else:
                 continue
         else:
-            # create new section
             section = Section(
                 name=sub["name"],
                 slug=slugify(sub["name"]),
@@ -486,19 +487,19 @@ def update_course(course_id):
             )
             db.session.add(section)
 
-        # Handle lessons
+        # ✅ Handle lessons
         for j, lesson_data in enumerate(sub.get("lessons", [])):
             lesson_id = lesson_data.get("id")
             if lesson_id:
                 lesson = Lesson.query.filter_by(id=lesson_id, section_id=section.id).first()
                 if lesson:
                     lesson.title = lesson_data.get("title", lesson.title)
+                    lesson.slug = slugify(lesson.title)  # ✅ keep lesson slug updated
                     lesson.notes = lesson_data.get("notes", lesson.notes)
                     lesson.reference_link = lesson_data.get("reference_link", lesson.reference_link)
                 else:
                     continue
             else:
-                # Create new lesson
                 video_file = request.files.get(f"sub_{i}_lesson_{j}_video")
                 doc_file = request.files.get(f"sub_{i}_lesson_{j}_doc")
 
@@ -530,7 +531,8 @@ def update_course(course_id):
 
     db.session.commit()
 
-    return jsonify({"message": "Course and related data updated"}), 200
+    return jsonify({"message": "✅ Course and related data updated successfully"}), 200
+
 
 # Delete a Section and all its Lessons
 @bp.route("/<int:course_id>/sections/<int:section_id>", methods=["DELETE"])
