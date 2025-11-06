@@ -30,8 +30,10 @@ class Payment(db.Model):
     reference = db.Column(db.String(100), unique=True, nullable=False)
     status = db.Column(db.Enum('pending', 'successful', 'failed'), nullable=False, default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
 
     user = db.relationship('User', back_populates='payments')
+    course = db.relationship('Course', backref='payments')
 
 class PendingUser(db.Model):
     __tablename__ = "pending_users"

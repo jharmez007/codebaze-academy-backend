@@ -138,12 +138,16 @@ def initiate_payment():
         return jsonify({"error": "Invalid course"}), 404
 
     # ✅ Check if user already enrolled or paid
+    existing_success = Payment.query.filter_by(
+        user_id=user_id, course_id=course_id, status="successful"
+    ).first()
+
+    if existing_success:
+        return jsonify({"error": "You have already paid for this course"}), 409
+
     existing_enrollment = Enrollment.query.filter_by(
         user_id=user_id, course_id=course_id
     ).first()
-    if existing_enrollment and existing_enrollment.status == "paid":
-        return jsonify({"error": "You have already paid for this course"}), 409
-
     # ✅ Initialize Paystack transaction
     headers = {
         "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
@@ -181,6 +185,7 @@ def initiate_payment():
     payment = Payment(
         user_id=user_id,
         provider="paystack", 
+        course_id=course_id,
         amount=amount,
         reference=reference,
         status="pending",
@@ -211,6 +216,54 @@ def initiate_payment():
 # ----------------------------------------------------------
 # 2️⃣ VERIFY PAYMENT
 # ----------------------------------------------------------
+# @bp.route("/verify", methods=["GET"])
+# def verify_payment():
+#     reference = request.args.get("reference")
+
+#     if not reference:
+#         return jsonify({"error": "Missing reference"}), 400
+
+#     headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
+#     response = requests.get(f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}", headers=headers)
+#     if response.status_code != 200:
+#         return jsonify({"error": "Paystack verification failed", "details": response.text}), 400
+
+#     data = response.json()
+
+#     if not data.get("status"):
+#         return jsonify({"error": "Payment verification failed"}), 400
+
+#     trx_data = data["data"]
+#     status = trx_data["status"]
+#     amount = trx_data["amount"] / 100  # convert kobo to naira
+#     metadata = trx_data.get("metadata", {})
+#     course_id = metadata.get("course_id")
+#     redirect_url = metadata.get("redirect_url") 
+#     # or "http://localhost:3000/products"
+
+#     # ✅ Update payment in DB
+#     payment = Payment.query.filter_by(reference=reference).first()
+#     if payment:
+#         payment.status = "successful" if status == "success" else "failed"
+#         payment.amount = amount
+
+#     if status == "success" and course_id:
+#         enrollment = Enrollment.query.filter_by(payment_reference=reference).first()
+#         if enrollment:
+#             enrollment.status = "paid"
+
+#     db.session.commit()
+
+#     # # ✅ If payment successful, update enrollment
+#     # if status == "success" and course_id:
+#     #     enrollment = Enrollment.query.filter_by(payment_reference=reference).first()
+#     #     if enrollment:
+#     #         enrollment.status = "paid"
+#     #         db.session.commit()
+
+#     # ✅ Redirect user back to your frontend
+#     return redirect(f"{redirect_url}?status={status}&reference={reference}")
+
 @bp.route("/verify", methods=["GET"])
 def verify_payment():
     reference = request.args.get("reference")
@@ -220,42 +273,47 @@ def verify_payment():
 
     headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
     response = requests.get(f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}", headers=headers)
-    data = response.json()
 
+    if response.status_code != 200:
+        return jsonify({"error": "Paystack verification failed", "details": response.text}), 400
+
+    data = response.json()
     if not data.get("status"):
-        return jsonify({"error": "Payment verification failed"}), 400
+        return jsonify({"error": "Invalid response from Paystack"}), 400
 
     trx_data = data["data"]
-    status = trx_data["status"]
-    amount = trx_data["amount"] / 100  # convert kobo to naira
+    is_successful = trx_data.get("status") == "success"
+    amount = trx_data.get("amount", 0) / 100  # kobo → naira
     metadata = trx_data.get("metadata", {})
     course_id = metadata.get("course_id")
-    redirect_url = metadata.get("redirect_url") 
-    # or "http://localhost:3000/products"
+    redirect_url = metadata.get("redirect_url", "http://localhost:3000")
 
-    # ✅ Update payment in DB
+    # ✅ Update or create payment
     payment = Payment.query.filter_by(reference=reference).first()
-    if payment:
-        payment.status = "successful" if status == "success" else "failed"
+    if not payment:
+        payment = Payment(
+            user_id=None,  # optional if JWT not required
+            course_id=course_id,
+            amount=amount,
+            provider="paystack",
+            reference=reference,
+            status="successful" if is_successful else "failed",
+        )
+        db.session.add(payment)
+    else:
+        payment.status = "successful" if is_successful else "failed"
         payment.amount = amount
 
-    if status == "success" and course_id:
+    # ✅ Update enrollment
+    if is_successful and course_id:
         enrollment = Enrollment.query.filter_by(payment_reference=reference).first()
         if enrollment:
             enrollment.status = "paid"
 
     db.session.commit()
 
-    # # ✅ If payment successful, update enrollment
-    # if status == "success" and course_id:
-    #     enrollment = Enrollment.query.filter_by(payment_reference=reference).first()
-    #     if enrollment:
-    #         enrollment.status = "paid"
-    #         db.session.commit()
-
-    # ✅ Redirect user back to your frontend
-    return redirect(f"{redirect_url}?status={status}&reference={reference}")
-
+    # ✅ Redirect frontend
+    return redirect(f"{redirect_url}?payment_status={trx_data.get('status')}&reference={reference}")
 
 # ----------------------------------------------------------
 # 3️⃣ CALLBACK ENDPOINT (Paystack calls this URL)
