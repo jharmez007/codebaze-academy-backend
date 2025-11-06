@@ -172,6 +172,7 @@ def get_course(course_id):
         "created_at": course.created_at.isoformat(),
         "image": course.image,
         "sections": [],
+        "user_id": user_id,
         "is_paid": is_paid  # ✅ Add payment status
     }
 
