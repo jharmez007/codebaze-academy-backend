@@ -21,4 +21,5 @@ class Coupon(db.Model):
     # optional: referral link or referral credit
     commission = db.Column(db.Float, nullable=True, default=0.0)
 
-    user = db.relationship("User", back_populates="coupons", lazy=True)
+    user = db.relationship("User", back_populates="coupons")
+    course = db.relationship("Course", back_populates="coupons")
