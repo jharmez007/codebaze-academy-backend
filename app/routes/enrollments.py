@@ -78,36 +78,61 @@ def enroll_course(course_id):
 
     if not user:
         return jsonify({"error": "User not found"}), 404
-    course = Course.query.filter_by(id=course_id).first()
 
+    course = Course.query.get(course_id)
     if not course:
         return jsonify({"error": "Course not found"}), 404
 
+    # ✅ Check if user already has any enrollment for this course
     existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
-    # If user already enrolled and active → block
-    if existing and existing.status == "active":
-        return jsonify({"message": "Already enrolled and active"}), 409
 
-    enrollment = Enrollment(
+    if existing:
+        # If already active → block
+        if existing.status == "active":
+            return jsonify({
+                "message": "Already enrolled and active",
+                "status": existing.status
+            }), 409
+
+        # If status is 'paid' or 'pending', just activate it instead of creating new
+        if existing.status in ["paid", "pending"]:
+            existing.status = "active"
+            existing.progress = 0.0
+            db.session.commit()
+
+            return jsonify({
+                "message": "Enrollment reactivated",
+                "course_id": course.id,
+                "course_title": course.title,
+                "user_id": user_id,
+                "status": existing.status,
+                "full_name": user.full_name,
+                "has_password": bool(user.password_hash and user.password_hash.strip()),
+                "enrolled_at": existing.enrolled_at.isoformat()
+            }), 200
+
+    # ✅ Otherwise, create new enrollment
+    new_enrollment = Enrollment(
         user_id=user_id,
         course_id=course.id,
         progress=0.0,
         status="active"
     )
 
-    db.session.add(enrollment)
+    db.session.add(new_enrollment)
     db.session.commit()
 
     has_password = bool(user.password_hash and user.password_hash.strip())
+
     return jsonify({
         "message": "Enrollment successful",
         "course_id": course.id,
         "course_title": course.title,
         "user_id": user_id,
-        "status": enrollment.status,
+        "status": new_enrollment.status,
         "full_name": user.full_name,
         "has_password": has_password,
-        "enrolled_at": enrollment.enrolled_at.isoformat()
+        "enrolled_at": new_enrollment.enrolled_at.isoformat()
     }), 201
 
 # List user's enrolled courses
