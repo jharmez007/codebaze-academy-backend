@@ -14,15 +14,21 @@ bp = Blueprint("students", __name__)
 def get_all_students():
     students = User.query.filter_by(role="student").all()
     result = []
+
     for s in students:
+        # Collect course titles for this student
+        course_titles = [enrollment.course.title for enrollment in s.enrollments if enrollment.course]
+
         result.append({
             "id": s.id,
-            "name": s.full_name,
+            "name": s.full_name,  # Assuming your User model has a full_name property
             "email": s.email,
             "is_active": s.is_active,
             "date_joined": s.created_at,
-            "courses_enrolled": len(s.enrollments)
+            "courses_enrolled": len(course_titles),
+            "course_titles": course_titles   # ✅ added this
         })
+
     return jsonify({
         "total_students": len(result),
         "students": result
