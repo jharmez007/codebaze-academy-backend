@@ -107,45 +107,24 @@ def list_courses_all():
         })
     return jsonify(result)
 
-# Get details of a single course
-# @bp.route("/<int:course_id>", methods=["GET"])
-# @jwt_required(optional=True)  # allow public view
-# def get_course(course_id):
-#     course = Course.query.get_or_404(course_id)
-
-#     response = {
-#         "id": course.id,
-#         "title": course.title,
-#         "slug": course.slug,
-#         "description": course.description,
-#         "long_description": course.long_description,
-#         "price": course.price,
-#         "is_published": course.is_published,
-#         "total_lessons": course.total_lessons,
-#         "created_at": course.created_at.isoformat(),
-#         "image": course.image,
-#         "sections": []
-#     }
-
-#     for sub in course.sections:
-#         sub_data = {"id": sub.id, "name": sub.name, "description": sub.description, "lessons": []}
-
-#         for lesson in sub.lessons:
-#             lesson_data = {"id": lesson.id, "title": lesson.title, "duration": lesson.duration, "size": lesson.size}
-#             sub_data["lessons"].append(lesson_data)
-
-#         response["sections"].append(sub_data)
-
-#     return jsonify(response)
 @bp.route("/<int:course_id>", methods=["GET"])
 @jwt_required(optional=True)
 def get_course(course_id):
     course = Course.query.get_or_404(course_id)
     user_id = get_jwt_identity()
 
-    is_paid = False  # Default to unpaid
+    is_paid = False
+    is_enrolled = False
 
     if user_id:
+        enrollment = Enrollment.query.filter_by(
+            user_id=user_id,
+            course_id=course.id,
+            status="active"
+        ).first()
+
+        if enrollment:
+            is_enrolled = True
         # Check if the user has made a successful payment for this course
         payment = (
             Payment.query.join(Enrollment, Enrollment.payment_reference == Payment.reference)
@@ -173,6 +152,7 @@ def get_course(course_id):
         "image": course.image,
         "sections": [],
         "user_id": user_id,
+        "is_enrolled": is_enrolled,
         "is_paid": is_paid  # ✅ Add payment status
     }
 
@@ -257,70 +237,6 @@ def get_full_course(course_id):
 
     return jsonify(course_data), 200
 
-# Create a course (admin only)
-# @bp.route("/", methods=["POST"])
-# @jwt_required()
-# @role_required("admin")
-# def create_course():
-#     # Expect JSON metadata in `form` field
-#     data = request.form.get("data")
-#     if not data:
-#         return jsonify({"error": "Missing course data"}), 400
-    
-#     try:
-#         data = json.loads(data)
-#     except:
-#         # print("RAW DATA:", request.form.get("data"))
-#         return jsonify({"error": "Invalid JSON format"}), 400
-
-#     title = data.get("title")
-#     description = data.get("description")
-#     price = data.get("price")
-#     sections_data = data.get("sections", [])
-    
-
-#     if not all([title, description, price]):
-#         return jsonify({"error": "Missing fields"}), 400
-
-#     course = Course(title=title, description=description, price=price, is_published=True)
-
-#     # Build sections & lessons
-#     for i, sub in enumerate(sections_data):
-#         sections = SubCategory(name=sub["name"], course=course)
-
-#         for j, lesson_data in enumerate(sub.get("lessons", [])):
-#             # Handle file uploads
-#             video_file = request.files.get(f"sub_{i}_lesson_{j}_video")
-#             doc_file = request.files.get(f"sub_{i}_lesson_{j}_doc")
-
-#             video_path, doc_path = None, None
-
-#             if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
-#                 filename = secure_filename(video_file.filename)
-#                 video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
-#                 video_file.save(video_path)
-
-#             if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
-#                 filename = secure_filename(doc_file.filename)
-#                 doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
-#                 doc_file.save(doc_path)
-
-#             lesson = Lesson(
-#                 title=lesson_data["title"],
-#                 notes=lesson_data.get("notes"),
-#                 reference_link=lesson_data.get("references"),
-#                 video_url=video_path,
-#                 document_url=doc_path,
-#                 course=course
-#             )
-#             sections.lessons.append(lesson)
-
-#         course.sections.append(sections)
-
-#     db.session.add(course)
-#     db.session.commit()
-
-#     return jsonify({"message": "Course created", "id": course.id}), 201
 
 @bp.route("/", methods=["POST"])
 @jwt_required()
@@ -518,48 +434,6 @@ def add_lesson(course_id):
     db.session.commit()
 
     return jsonify({"message": "Lesson added", "lesson_id": lesson.id}), 201
-# Update a course (admin only)
-# @bp.route("/<int:course_id>", methods=["PUT"])
-# @jwt_required()
-# @role_required("admin")
-# def update_course(course_id):
-#     course = Course.query.get_or_404(course_id)
-
-#     # Get form data (consistent with create_course)
-#     raw_data = request.form.get("data")
-#     if not raw_data:
-#         return jsonify({"error": "Missing course data"}), 400
-
-#     try:
-#         data = json.loads(raw_data)
-#     except:
-#         return jsonify({"error": "Invalid JSON format"}), 400
-
-#     # Update fields if provided
-#     course.title = data.get("title", course.title)
-#     course.description = data.get("description", course.description)
-#     course.price = data.get("price", course.price)
-#     # course.is_published = data.get("is_published", course.is_published)
-
-#     # Handle new image if uploaded
-#     image_file = request.files.get("image")
-#     if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
-#         filename = secure_filename(image_file.filename)
-#         image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
-#         image_file.save(image_path)
-#         course.image = image_path  # update image path
-
-#     db.session.commit()
-
-#     return jsonify({
-#         "message": "Course updated",
-#         "id": course.id,
-#         "title": course.title,
-#         "description": course.description,
-#         "price": course.price,
-#         "is_published": course.is_published,
-#         "image": course.image
-#     }), 200
 
 @bp.route("/<int:course_id>", methods=["PUT"])
 @jwt_required()
