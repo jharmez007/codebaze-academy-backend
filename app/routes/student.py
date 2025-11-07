@@ -76,7 +76,7 @@ def get_student_profile(student_id):
         })
     return jsonify({
         "id": student.id,
-        "name": student.name,
+        "name": student.full_name,
         "email": student.email,
         "is_active": student.is_active,
         "date_joined": student.created_at,
