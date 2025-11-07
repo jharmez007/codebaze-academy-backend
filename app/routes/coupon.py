@@ -8,6 +8,7 @@ from app.models.course import Course
 
 bp = Blueprint("coupon", __name__)
 
+# ---------------- CREATE ----------------
 @bp.route("/coupons", methods=["POST"])
 @jwt_required()
 @role_required("admin")
@@ -26,7 +27,7 @@ def create_coupon():
     if not all([code, discount_type, discount_value]):
         return jsonify({"error": "Missing required fields"}), 400
 
-    if Coupon.query.filter_by(code=code).first():
+    if Coupon.query.filter_by(code=code.upper()).first():
         return jsonify({"error": "Coupon code already exists"}), 409
 
     coupon = Coupon(
@@ -43,13 +44,19 @@ def create_coupon():
     db.session.add(coupon)
     db.session.commit()
 
-    return jsonify({"message": "Coupon created successfully", "coupon": {
-        "code": coupon.code,
-        "type": coupon.type,
-        "discount": f"{coupon.discount_value} ({coupon.discount_type})",
-        "expires": coupon.valid_until.isoformat() if coupon.valid_until else None
-    }}), 201
+    return jsonify({
+        "message": "Coupon created successfully",
+        "coupon": {
+            "id": coupon.id,
+            "code": coupon.code,
+            "type": coupon.type,
+            "discount": f"{coupon.discount_value} ({coupon.discount_type})",
+            "expires": coupon.valid_until.isoformat() if coupon.valid_until else None
+        }
+    }), 201
 
+
+# ---------------- VALIDATE ----------------
 @bp.route("/coupons/validate", methods=["POST"])
 @jwt_required()
 def validate_coupon():
@@ -59,24 +66,19 @@ def validate_coupon():
     user_id = get_jwt_identity()
 
     coupon = Coupon.query.filter_by(code=code, is_active=True).first()
-
     if not coupon:
         return jsonify({"error": "Invalid or inactive coupon"}), 404
 
-    # ✅ Check time validity
     now = datetime.utcnow()
     if coupon.valid_until and now > coupon.valid_until:
         return jsonify({"error": "Coupon expired"}), 400
 
-    # ✅ Check user-specific
     if coupon.type == "user_specific" and coupon.user_id != user_id:
         return jsonify({"error": "This coupon is not assigned to you"}), 403
 
-    # ✅ Check usage limit
     if coupon.max_uses and coupon.used_count >= coupon.max_uses:
         return jsonify({"error": "Coupon usage limit reached"}), 400
 
-    # ✅ Calculate discount
     course = Course.query.get(course_id)
     if not course:
         return jsonify({"error": "Invalid course"}), 404
@@ -97,3 +99,77 @@ def validate_coupon():
         "coupon_type": coupon.type,
         "code": coupon.code
     }), 200
+
+
+# ---------------- LIST ALL ----------------
+@bp.route("/coupons", methods=["GET"])
+@jwt_required()
+@role_required("admin")
+def list_coupons():
+    coupons = Coupon.query.order_by(Coupon.created_at.desc()).all()
+    result = []
+    for c in coupons:
+        result.append({
+            "id": c.id,
+            "code": c.code,
+            "type": c.type,
+            "discount_type": c.discount_type,
+            "discount_value": c.discount_value,
+            "max_uses": c.max_uses,
+            "used_count": c.used_count,
+            "is_active": c.is_active,
+            "valid_until": c.valid_until.isoformat() if c.valid_until else None,
+            "created_at": c.created_at.isoformat() if c.created_at else None
+        })
+    return jsonify(result), 200
+
+
+# ---------------- GET DETAILS ----------------
+@bp.route("/coupons/<int:coupon_id>", methods=["GET"])
+@jwt_required()
+@role_required("admin")
+def get_coupon(coupon_id):
+    coupon = Coupon.query.get_or_404(coupon_id)
+    return jsonify({
+        "id": coupon.id,
+        "code": coupon.code,
+        "type": coupon.type,
+        "discount_type": coupon.discount_type,
+        "discount_value": coupon.discount_value,
+        "max_uses": coupon.max_uses,
+        "used_count": coupon.used_count,
+        "is_active": coupon.is_active,
+        "valid_until": coupon.valid_until.isoformat() if coupon.valid_until else None,
+        "commission": coupon.commission
+    }), 200
+
+
+# ---------------- UPDATE ----------------
+@bp.route("/coupons/<int:coupon_id>", methods=["PATCH"])
+@jwt_required()
+@role_required("admin")
+def update_coupon(coupon_id):
+    coupon = Coupon.query.get_or_404(coupon_id)
+    data = request.get_json() or {}
+
+    for field in ["type", "discount_type", "discount_value", "max_uses", "commission", "is_active"]:
+        if field in data:
+            setattr(coupon, field, data[field])
+
+    if "valid_until" in data:
+        coupon.valid_until = datetime.fromisoformat(data["valid_until"]) if data["valid_until"] else None
+
+    db.session.commit()
+
+    return jsonify({"message": "Coupon updated successfully"}), 200
+
+
+# ---------------- DELETE -------------
+@bp.route("/coupons/<int:coupon_id>", methods=["DELETE"])
+@jwt_required()
+@role_required("admin")
+def delete_coupon(coupon_id):
+    coupon = Coupon.query.get_or_404(coupon_id)
+    db.session.delete(coupon)
+    db.session.commit()
+    return jsonify({"message": "Coupon deleted successfully"}), 200
