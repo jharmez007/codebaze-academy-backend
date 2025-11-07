@@ -9,6 +9,52 @@ from app.models.course import Course
 bp = Blueprint("coupon", __name__)
 
 # ---------------- CREATE ----------------
+# @bp.route("/coupons", methods=["POST"])
+# @jwt_required()
+# @role_required("admin")
+# def create_coupon():
+#     data = request.get_json()
+
+#     code = data.get("code")
+#     coupon_type = data.get("type", "general")
+#     discount_type = data.get("discount_type", "percent")
+#     discount_value = data.get("discount_value")
+#     user_id = data.get("user_id")
+#     max_uses = data.get("max_uses")
+#     valid_until = data.get("valid_until")
+#     commission = data.get("commission")
+
+#     if not all([code, discount_type, discount_value]):
+#         return jsonify({"error": "Missing required fields"}), 400
+
+#     if Coupon.query.filter_by(code=code.upper()).first():
+#         return jsonify({"error": "Coupon code already exists"}), 409
+
+#     coupon = Coupon(
+#         code=code.upper(),
+#         type=coupon_type,
+#         discount_type=discount_type,
+#         discount_value=discount_value,
+#         user_id=user_id,
+#         max_uses=max_uses,
+#         valid_until=datetime.fromisoformat(valid_until) if valid_until else None,
+#         commission=commission,
+#     )
+
+#     db.session.add(coupon)
+#     db.session.commit()
+
+#     return jsonify({
+#         "message": "Coupon created successfully",
+#         "coupon": {
+#             "id": coupon.id,
+#             "code": coupon.code,
+#             "type": coupon.type,
+#             "discount": f"{coupon.discount_value} ({coupon.discount_type})",
+#             "expires": coupon.valid_until.isoformat() if coupon.valid_until else None
+#         }
+#     }), 201
+
 @bp.route("/coupons", methods=["POST"])
 @jwt_required()
 @role_required("admin")
@@ -23,6 +69,8 @@ def create_coupon():
     max_uses = data.get("max_uses")
     valid_until = data.get("valid_until")
     commission = data.get("commission")
+    course_ids = data.get("course_ids", [])  # ✅ list of course IDs
+    applies_to_all = data.get("applies_to_all", False)  # ✅ flag for all courses
 
     if not all([code, discount_type, discount_value]):
         return jsonify({"error": "Missing required fields"}), 400
@@ -39,7 +87,17 @@ def create_coupon():
         max_uses=max_uses,
         valid_until=datetime.fromisoformat(valid_until) if valid_until else None,
         commission=commission,
+        applies_to_all=applies_to_all,  # ✅ store whether it applies to all
     )
+
+    # ✅ If specific courses were provided, attach them
+    if not applies_to_all and course_ids:
+        courses = Course.query.filter(Course.id.in_(course_ids)).all()
+        if not courses:
+            return jsonify({"error": "No valid courses found for provided IDs"}), 400
+        coupon.courses = courses  # many-to-many relationship
+    elif applies_to_all:
+        coupon.courses = []  # can be left empty if all courses are valid
 
     db.session.add(coupon)
     db.session.commit()
@@ -51,10 +109,11 @@ def create_coupon():
             "code": coupon.code,
             "type": coupon.type,
             "discount": f"{coupon.discount_value} ({coupon.discount_type})",
-            "expires": coupon.valid_until.isoformat() if coupon.valid_until else None
+            "expires": coupon.valid_until.isoformat() if coupon.valid_until else None,
+            "applies_to_all": coupon.applies_to_all,
+            "attached_courses": [c.title for c in coupon.courses] if coupon.courses else "All courses"
         }
     }), 201
-
 
 # ---------------- VALIDATE ----------------
 @bp.route("/coupons/validate", methods=["POST"])
