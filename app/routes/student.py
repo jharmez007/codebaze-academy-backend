@@ -72,7 +72,7 @@ def get_student_profile(student_id):
         enrollments.append({
             "course_id": e.course_id,
             "progress": e.progress,
-            "enrolled_on": e.enrolled_on
+            "enrolled_at": e.enrolled_at
         })
     return jsonify({
         "id": student.id,
