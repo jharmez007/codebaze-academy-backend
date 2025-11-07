@@ -87,25 +87,29 @@ def get_student_profile(student_id):
     }), 200
 
 
-@bp.route("/<int:student_id>/suspend", methods=["PUT"])
+@bp.route("/<int:student_id>/<string:action>", methods=["PUT"])
 @jwt_required()
 @role_required("admin")
-def suspend_student(student_id):
+def update_student_status(student_id, action):
     student = User.query.filter_by(id=student_id, role="student").first_or_404()
-    if not student.is_active:
-        return jsonify({"message": "Student already suspended"}), 400
-    student.is_active = False
-    db.session.commit()
-    return jsonify({"message": f"Student {student.full_name} has been suspended."}), 200
 
+    # Normalize action (just in case)
+    action = action.lower()
 
-@bp.route("/<int:student_id>/activate", methods=["PUT"])
-@jwt_required()
-@role_required("admin")
-def activate_student(student_id):
-    student = User.query.filter_by(id=student_id, role="student").first_or_404()
-    if student.is_active:
-        return jsonify({"message": "Student already active"}), 400
-    student.is_active = True
+    if action == "suspend":
+        if not student.is_active:
+            return jsonify({"message": "Student already suspended"}), 400
+        student.is_active = False
+        message = f"Student {student.full_name} has been suspended."
+
+    elif action == "activate":
+        if student.is_active:
+            return jsonify({"message": "Student already active"}), 400
+        student.is_active = True
+        message = f"Student {student.full_name} has been activated."
+
+    else:
+        return jsonify({"error": "Invalid action. Use 'activate' or 'suspend'."}), 400
+
     db.session.commit()
-    return jsonify({"message": f"Student {student.full_name} has been activated."}), 200
+    return jsonify({"message": message}), 200
