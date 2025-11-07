@@ -69,11 +69,14 @@ def get_student_profile(student_id):
         return jsonify({"error": "Student not found"}), 404
     enrollments = []
     for e in student.enrollments:
+        course_titles = [enrollment.course.title for enrollment in s.enrollments if enrollment.course]
         enrollments.append({
             "course_id": e.course_id,
+            "course_titles": course_titles,
             "progress": e.progress,
             "enrolled_at": e.enrolled_at
         })
+
     return jsonify({
         "id": student.id,
         "name": student.full_name,
