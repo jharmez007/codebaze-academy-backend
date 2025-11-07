@@ -96,7 +96,7 @@ def suspend_student(student_id):
         return jsonify({"message": "Student already suspended"}), 400
     student.is_active = False
     db.session.commit()
-    return jsonify({"message": f"Student {student.name} has been suspended."}), 200
+    return jsonify({"message": f"Student {student.full_name} has been suspended."}), 200
 
 
 @bp.route("/<int:student_id>/activate", methods=["PUT"])
@@ -108,4 +108,4 @@ def activate_student(student_id):
         return jsonify({"message": "Student already active"}), 400
     student.is_active = True
     db.session.commit()
-    return jsonify({"message": f"Student {student.name} has been activated."}), 200
+    return jsonify({"message": f"Student {student.full_name} has been activated."}), 200
