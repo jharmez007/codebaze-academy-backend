@@ -67,12 +67,12 @@ def get_student_profile(student_id):
     student = User.query.filter_by(id=student_id, role="student").first()
     if not student:
         return jsonify({"error": "Student not found"}), 404
+
     enrollments = []
-    for e in student.enrollments:
-        course_titles = [enrollment.course.title for enrollment in e.enrollments if enrollment.course]
+    for e in student.enrollments:  # student.enrollments should be a relationship
         enrollments.append({
             "course_id": e.course_id,
-            "course_titles": course_titles,
+            "course_title": e.course.title if e.course else None,
             "progress": e.progress,
             "enrolled_at": e.enrolled_at
         })
@@ -85,7 +85,6 @@ def get_student_profile(student_id):
         "date_joined": student.created_at,
         "enrollments": enrollments
     }), 200
-
 
 
 @bp.route("/<int:student_id>/suspend", methods=["PUT"])
