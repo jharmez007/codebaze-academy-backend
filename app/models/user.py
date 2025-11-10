@@ -32,6 +32,7 @@ class Payment(db.Model):
     status = db.Column(db.Enum('pending', 'successful', 'failed'), nullable=False, default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
+    coupon_code = db.Column(db.String(50), nullable=True)
 
     user = db.relationship('User', back_populates='payments')
     course = db.relationship('Course', backref='payments')
