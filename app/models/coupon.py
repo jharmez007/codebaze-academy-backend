@@ -15,6 +15,7 @@ class Coupon(db.Model):
     used_count = db.Column(db.Integer, default=0)
     valid_from = db.Column(db.DateTime, default=datetime.utcnow)
     valid_until = db.Column(db.DateTime, nullable=True)
+    applies_to_all = db.Column(db.Boolean, default=False)
 
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
