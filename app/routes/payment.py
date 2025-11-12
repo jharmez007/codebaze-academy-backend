@@ -316,7 +316,7 @@ def verify_payment():
             user_id=payment.user_id, course_id=payment.course_id
         ).first()
         if enrollment:
-            enrollment.status = "active"
+            enrollment.status = "paid"
         else:
             db.session.add(Enrollment(
                 user_id=payment.user_id,
