@@ -158,32 +158,36 @@ def initiate_payment():
     if coupon_code:
         coupon = Coupon.query.filter_by(code=coupon_code, is_active=True).first()
 
-        if coupon:
-            now = datetime.utcnow()
+        if not coupon:
+            return jsonify({"error": "Invalid coupon"}), 404
 
-            # Time validity
-            if coupon.valid_until and now > coupon.valid_until:
-                return jsonify({"error": "Coupon expired"}), 400
+        now = datetime.utcnow()
 
-            # User-specific restriction
-            if coupon.type == "user_specific" and coupon.user_id != user_id:
-                return jsonify({"error": "This coupon is not assigned to you"}), 403
+        # Time validity
+        if coupon.valid_until and now > coupon.valid_until:
+            return jsonify({"error": "Coupon expired"}), 400
 
-            # Course-specific restriction (NEW)
-            if coupon.course_id and coupon.course_id != course_id:
+        # User-specific restriction
+        if coupon.type == "user_specific" and coupon.user_id != user_id:
+            return jsonify({"error": "This coupon is not assigned to you"}), 403
+
+        # Course-specific restriction (FIXED)
+        if not coupon.applies_to_all:
+            valid_course_ids = [course.id for course in coupon.courses]
+            if course_id not in valid_course_ids:
                 return jsonify({"error": "This coupon is not valid for this course"}), 400
 
-            # Usage limit
-            if coupon.max_uses and coupon.used_count >= coupon.max_uses:
-                return jsonify({"error": "Coupon usage limit reached"}), 400
+        # Usage limit
+        if coupon.max_uses and coupon.used_count >= coupon.max_uses:
+            return jsonify({"error": "Coupon usage limit reached"}), 400
 
-            # Discount calculation
-            if coupon.discount_type == "percent":
-                discount_amount = (coupon.discount_value / 100) * amount
-            else:
-                discount_amount = min(coupon.discount_value, amount)
+        # Discount calculation
+        if coupon.discount_type == "percent":
+            discount_amount = (coupon.discount_value / 100) * amount
+        else:
+            discount_amount = min(coupon.discount_value, amount)
 
-            amount = max(amount - discount_amount, 0)
+        amount = max(amount - discount_amount, 0)
 
     # ✅ Check if enrollment exists
     existing_enrollment = Enrollment.query.filter_by(
@@ -257,6 +261,7 @@ def initiate_payment():
         "reference": reference,
         "discount_applied": discount_amount,
     }), 200
+
 
 
 @bp.route("/verify", methods=["GET"])
