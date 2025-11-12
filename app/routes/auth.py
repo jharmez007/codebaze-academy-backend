@@ -4,8 +4,8 @@ from app.models import User
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, create_refresh_token
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import timedelta
-from app.models.user import PendingUser
-from datetime import datetime
+from app.models.user import PendingUser, UserSession
+from datetime import datetime, timedelta
 from app.utils.mailer import send_email
 import uuid
 import random
@@ -137,26 +137,57 @@ def login():
 
     user = User.query.filter_by(email=email).first()
 
-    if user and user.check_password(password):
-        # Generate tokens
-        access_token = create_access_token(
-            identity=str(user.id),
-            additional_claims={"role": user.role}
+    if not user or not user.check_password(password):
+        return jsonify({"error": "Invalid credentials"}), 401
+
+    if not user.is_active:
+        return jsonify({"error": "Account suspended"}), 403
+
+    # === Handle Session Management ===
+    if user.role == "student":
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        UserSession.query.filter(UserSession.created_at < thirty_days_ago).delete()
+        db.session.commit()
+        active_sessions = UserSession.query.filter_by(user_id=user.id).count()
+        if active_sessions >= 5:
+            return jsonify({
+                "error": "Maximum session limit (5) reached. Please log out from another device."
+            }), 403
+
+        # Gather basic device + IP info
+        ip = request.remote_addr
+        user_agent = request.headers.get("User-Agent", "Unknown Device")
+
+        # Create a new session record
+        new_session = UserSession(
+            user_id=user.id,
+            device_info=user_agent,
+            ip_address=ip,
+            location="Unknown",  # (Optional: you can resolve via ipinfo or GeoIP later)
+            created_at=datetime.utcnow(),
+            last_active=datetime.utcnow()
         )
-        refresh_token = create_refresh_token(identity=str(user.id))
+        db.session.add(new_session)
+        db.session.commit()
 
-        return jsonify({
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "user": {
-                "id": user.id,
-                "full_name": user.full_name,
-                "email": user.email,
-                "role": user.role
-            }
-        }), 200
+    # === Generate Tokens ===
+    access_token = create_access_token(
+        identity=str(user.id),
+        additional_claims={"role": user.role}
+    )
+    refresh_token = create_refresh_token(identity=str(user.id))
 
-    return jsonify({"error": "Invalid credentials"}), 401
+    return jsonify({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "user": {
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": user.role,
+            "is_active": user.is_active
+        }
+    }), 200
 
 @bp.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)
