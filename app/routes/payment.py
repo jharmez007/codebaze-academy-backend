@@ -321,7 +321,7 @@ def verify_payment():
             db.session.add(Enrollment(
                 user_id=payment.user_id,
                 course_id=payment.course_id,
-                status="active",
+                status="paid",
                 payment_reference=reference,
             ))
 
