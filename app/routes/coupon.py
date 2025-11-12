@@ -186,8 +186,7 @@ def list_coupons():
         if c.applies_to_all:
             course_info = "applies to all courses"
         else:
-            course_info = [course.title for course in c.courses]
-
+            course_info = ", ".join(course.title for course in c.courses)
         result.append({
             "id": c.id,
             "code": c.code,
