@@ -188,7 +188,7 @@ def initiate_payment():
             discount_amount = min(coupon.discount_value, amount)
 
         amount = max(amount - discount_amount, 0)
-        coupon.used_count = (coupon.used_count or 0) + 1
+        # coupon.used_count = (coupon.used_count or 0) + 1
 
     # ✅ Check if enrollment exists
     existing_enrollment = Enrollment.query.filter_by(
@@ -268,53 +268,74 @@ def initiate_payment():
 @bp.route("/verify", methods=["GET"])
 def verify_payment():
     reference = request.args.get("reference")
-
     if not reference:
-        return jsonify({"error": "Missing reference"}), 400
+        return jsonify({"error": "Missing payment reference"}), 400
 
-    headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
-    response = requests.get(f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}", headers=headers)
-
-    if response.status_code != 200:
-        return jsonify({"error": "Paystack verification failed", "details": response.text}), 400
-
-    data = response.json()
-    if not data.get("status"):
-        return jsonify({"error": "Invalid response from Paystack"}), 400
-
-    trx_data = data["data"]
-    is_successful = trx_data.get("status") == "success"
-    amount = trx_data.get("amount", 0) / 100  # kobo → naira
-    metadata = trx_data.get("metadata", {})
-    course_id = metadata.get("course_id")
-    redirect_url = metadata.get("redirect_url", "http://localhost:3000")
-
-    # ✅ Update or create payment
     payment = Payment.query.filter_by(reference=reference).first()
     if not payment:
-        payment = Payment(
-            user_id=None,  # optional if JWT not required
-            course_id=course_id,
-            amount=amount,
-            provider="paystack",
-            reference=reference,
-            status="successful" if is_successful else "failed",
+        return jsonify({"error": "Payment not found"}), 404
+
+    # If already successful, return early — allows retry without side effects
+    if payment.status == "successful":
+        return jsonify({"message": "Payment already verified"}), 200
+
+    headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
+
+    try:
+        response = requests.get(
+            f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}",
+            headers=headers,
+            timeout=10
         )
-        db.session.add(payment)
-    else:
-        payment.status = "successful" if is_successful else "failed"
-        payment.amount = amount
+        data = response.json()
+    except requests.exceptions.RequestException:
+        # Don’t fail verification permanently — let client retry
+        return jsonify({"error": "Could not reach Paystack. Try again."}), 502
 
-    # ✅ Update enrollment
-    if is_successful and course_id:
-        enrollment = Enrollment.query.filter_by(payment_reference=reference).first()
+    if not data.get("status"):
+        return jsonify({"error": "Invalid Paystack response"}), 400
+
+    pay_data = data["data"]
+
+    if pay_data["status"] == "success":
+        # ✅ Mark payment successful
+        payment.status = "successful"
+        db.session.commit()
+
+        # ✅ Update enrollment
+        enrollment = Enrollment.query.filter_by(
+            user_id=payment.user_id, course_id=payment.course_id
+        ).first()
+
         if enrollment:
-            enrollment.status = "paid"
+            enrollment.status = "active"
+        else:
+            db.session.add(
+                Enrollment(
+                    user_id=payment.user_id,
+                    course_id=payment.course_id,
+                    status="active",
+                    payment_reference=reference,
+                )
+            )
 
-    db.session.commit()
+        # ✅ Coupon increment (only now)
+        if payment.coupon_code:
+            coupon = Coupon.query.filter_by(code=payment.coupon_code).first()
+            if coupon:
+                coupon.used_count = (coupon.used_count or 0) + 1
 
-    # ✅ Redirect frontend
-    return redirect(f"{redirect_url}?payment_status={trx_data.get('status')}&reference={reference}")
+        db.session.commit()
+        return jsonify({"message": "Payment verified successfully"}), 200
+
+    elif pay_data["status"] == "failed":
+        payment.status = "failed"
+        db.session.commit()
+        return jsonify({"error": "Payment failed"}), 400
+
+    else:
+        # Still pending on Paystack side
+        return jsonify({"message": "Payment still pending, please retry"}), 202
 
 # ----------------------------------------------------------
 # 3️⃣ CALLBACK ENDPOINT (Paystack calls this URL)
