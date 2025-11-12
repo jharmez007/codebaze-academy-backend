@@ -11,11 +11,20 @@ class User(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Profile fields
+    bio = db.Column(db.Text, nullable=True)
+    profile_photo = db.Column(db.String(255), nullable=True)
+    social_facebook = db.Column(db.String(255), nullable=True)
+    social_twitter = db.Column(db.String(255), nullable=True)
+    social_linkedin = db.Column(db.String(255), nullable=True)
+    phone = db.Column(db.String(50), nullable=True)
+
     enrollments = db.relationship('Enrollment', back_populates='student')
     progress = db.relationship('Progress', back_populates='student')
     comments = db.relationship('Comment', back_populates='user')
     payments = db.relationship('Payment', back_populates='user')
     coupons = db.relationship("Coupon", back_populates="user", lazy=True)
+    sessions = db.relationship('UserSession', back_populates='user', cascade='all, delete-orphan')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -50,3 +59,14 @@ class PendingUser(db.Model):
 
     def __repr__(self):
         return f"<PendingUser {self.email}>"
+
+class UserSession(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    device_info = db.Column(db.String(255))  # e.g. 'Windows 10 - Chrome'
+    ip_address = db.Column(db.String(100))
+    location = db.Column(db.String(255))  # city or country from IP (optional)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_active = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref="sessions")

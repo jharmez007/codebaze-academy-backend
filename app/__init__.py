@@ -23,6 +23,6 @@ def create_app():
     app.register_blueprint(student.bp, url_prefix='/students')
     app.register_blueprint(payment.bp, url_prefix="/payments")
     app.register_blueprint(coupon.bp)
-    # app.register_blueprint(admin.bp, url_prefix='/admin')
+    app.register_blueprint(admin.bp, url_prefix='/admin')
 
     return app
