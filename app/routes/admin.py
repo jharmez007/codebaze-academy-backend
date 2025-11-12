@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
-from app.models import User, Course, Enrollment, coupon
+from app.models import User, Course, Enrollment
+from app.models.coupon import Coupon
 from app.models.user import Payment
 from sqlalchemy import func, extract
 from datetime import datetime
