@@ -6,7 +6,7 @@ from app.models import User, Enrollment, Course
 from app.utils.auth import role_required
 import os
 from werkzeug.utils import secure_filename
-from reportlab.pdfgen import canvas, io
+from reportlab.pdfgen import canvas
 
 from datetime import datetime
 
