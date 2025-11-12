@@ -196,7 +196,7 @@ def list_coupons():
             "max_uses": c.max_uses,
             "used_count": c.used_count,
             "is_active": c.is_active,
-            "courses": course_info,
+            "course": course_info,
             "applies_to_all": c.applies_to_all,
             "valid_until": c.valid_until.isoformat() if c.valid_until else None,
             "created_at": c.created_at.isoformat() if c.created_at else None
