@@ -267,17 +267,9 @@ def initiate_payment():
 
 @bp.route("/verify", methods=["GET"])
 def verify_payment():
-    reference = request.args.get("reference")
+    reference = request.args.get("reference") or request.args.get("trxref")
     if not reference:
-        return jsonify({"error": "Missing payment reference"}), 400
-
-    payment = Payment.query.filter_by(reference=reference).first()
-    if not payment:
-        return jsonify({"error": "Payment not found"}), 404
-
-    # If already successful, return early — allows retry without side effects
-    if payment.status == "successful":
-        return jsonify({"message": "Payment already verified"}), 200
+        return jsonify({"error": "Missing reference"}), 400
 
     headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
 
@@ -287,54 +279,70 @@ def verify_payment():
             headers=headers,
             timeout=10
         )
-        data = response.json()
     except requests.exceptions.RequestException:
-        # Don’t fail verification permanently — let client retry
         return jsonify({"error": "Could not reach Paystack. Try again."}), 502
 
+    if response.status_code != 200:
+        return jsonify({"error": "Paystack verification failed", "details": response.text}), 400
+
+    data = response.json()
     if not data.get("status"):
         return jsonify({"error": "Invalid Paystack response"}), 400
 
-    pay_data = data["data"]
+    trx_data = data["data"]
+    pay_status = trx_data["status"]
+    is_successful = pay_status == "success"
+    amount = trx_data.get("amount", 0) / 100
+    metadata = trx_data.get("metadata", {}) or {}
 
-    if pay_data["status"] == "success":
-        # ✅ Mark payment successful
+    course_id = metadata.get("course_id")
+    redirect_url = metadata.get("redirect_url", "http://localhost:3000")
+
+    # Lookup payment
+    payment = Payment.query.filter_by(reference=reference).first()
+    if not payment:
+        return jsonify({"error": "Payment not found"}), 404
+
+    # Prevent double processing
+    if payment.status == "successful":
+        return redirect(f"{redirect_url}?payment_status=success&reference={reference}")
+
+    if is_successful:
         payment.status = "successful"
-        db.session.commit()
+        payment.amount = amount
 
-        # ✅ Update enrollment
+        # Update enrollment
         enrollment = Enrollment.query.filter_by(
             user_id=payment.user_id, course_id=payment.course_id
         ).first()
-
         if enrollment:
             enrollment.status = "active"
         else:
-            db.session.add(
-                Enrollment(
-                    user_id=payment.user_id,
-                    course_id=payment.course_id,
-                    status="active",
-                    payment_reference=reference,
-                )
-            )
+            db.session.add(Enrollment(
+                user_id=payment.user_id,
+                course_id=payment.course_id,
+                status="active",
+                payment_reference=reference,
+            ))
 
-        # ✅ Coupon increment (only now)
+        # Increment coupon (only after success)
         if payment.coupon_code:
             coupon = Coupon.query.filter_by(code=payment.coupon_code).first()
             if coupon:
                 coupon.used_count = (coupon.used_count or 0) + 1
 
         db.session.commit()
-        return jsonify({"message": "Payment verified successfully"}), 200
+        return redirect(f"{redirect_url}?payment_status=success&reference={reference}")
 
-    elif pay_data["status"] == "failed":
+    elif pay_status == "failed":
         payment.status = "failed"
         db.session.commit()
-        return jsonify({"error": "Payment failed"}), 400
+        return redirect(f"{redirect_url}?payment_status=failed&reference={reference}")
 
     else:
-        # Still pending on Paystack side
+        # Still pending
+        payment.status = "pending"
+        db.session.commit()
         return jsonify({"message": "Payment still pending, please retry"}), 202
 
 # ----------------------------------------------------------
