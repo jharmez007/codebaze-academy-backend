@@ -188,6 +188,7 @@ def initiate_payment():
             discount_amount = min(coupon.discount_value, amount)
 
         amount = max(amount - discount_amount, 0)
+        coupon.used_count = (coupon.used_count or 0) + 1
 
     # ✅ Check if enrollment exists
     existing_enrollment = Enrollment.query.filter_by(
