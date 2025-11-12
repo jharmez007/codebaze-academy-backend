@@ -69,4 +69,4 @@ class UserSession(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_active = db.Column(db.DateTime, default=datetime.utcnow)
 
-    user = db.relationship("User", backref="sessions")
+    user = db.relationship("User", back_populates="sessions")
