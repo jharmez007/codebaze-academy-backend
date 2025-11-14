@@ -413,6 +413,7 @@ def get_student_full_course(course_id):
         section_data = {
             "id": section.id,
             "name": section.name,
+            "slug": section.slug,
             "description": section.description,
             "lessons": []
         }
