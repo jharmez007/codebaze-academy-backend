@@ -1,5 +1,9 @@
 # Python
 __pycache__/
+models/__pycache__/
+app/__pycache__/
+models/*.pyc
+app/*.pyc
 *.py[cod]
 *.so
 
