@@ -317,22 +317,65 @@ def get_student_courses():
         }
     }), 200
 
+def calculate_progress(course, user_id):
+    total_lessons = 0
+    completed_lessons = 0
+
+    section_progress_list = []
+
+    for section in course.sections:
+        sec_total = len(section.lessons)
+        sec_completed = 0
+
+        for lesson in section.lessons:
+            total_lessons += 1
+
+            progress = Progress.query.filter_by(
+                user_id=user_id,
+                lesson_id=lesson.id,
+                is_completed=True
+            ).first()
+
+            if progress:
+                completed_lessons += 1
+                sec_completed += 1
+
+        section_progress_list.append({
+            "section_id": section.id,
+            "section_name": section.name,
+            "completed": sec_completed,
+            "total": sec_total,
+            "percentage": round((sec_completed / sec_total) * 100, 2) if sec_total > 0 else 0
+        })
+
+    overall_percentage = (
+        round((completed_lessons / total_lessons) * 100, 2)
+        if total_lessons > 0 else 0
+    )
+
+    return {
+        "completed_lessons": completed_lessons,
+        "total_lessons": total_lessons,
+        "overall_percentage": overall_percentage,
+        "sections": section_progress_list
+    }
+
 @bp.route("/courses/<int:course_id>/full", methods=["GET"])
 @jwt_required()
 def get_student_full_course(course_id):
     """
-    Returns full course data ONLY for students who are enrolled.
+    Returns full course data ONLY for enrolled students including progress.
     """
     user_id = get_jwt_identity()
     student = User.query.get_or_404(user_id)
 
-    # --- Allow only students ---
+    # Allow only students
     if student.role != "student":
         return jsonify({"error": "Only students can access full course content"}), 403
 
     course = Course.query.get_or_404(course_id)
 
-    # --- Check enrollment ---
+    # Check active enrollment
     enrollment = Enrollment.query.filter_by(
         user_id=user_id,
         course_id=course_id,
@@ -344,11 +387,14 @@ def get_student_full_course(course_id):
             "error": "You are not enrolled in this course. Enroll to gain full access."
         }), 403
 
-    # Build the deep nested course structure
+    # ---- Calculate Progress ----
+    progress_data = calculate_progress(course, user_id)
+
+    # ---- Build deep course structure ----
     course_data = {
         "id": course.id,
         "title": course.title,
-        "slug": getattr(course, "slug", None),
+        "slug": course.slug,
         "description": course.description,
         "long_description": course.long_description,
         "price": course.price,
@@ -356,6 +402,10 @@ def get_student_full_course(course_id):
         "total_lessons": course.total_lessons,
         "created_at": course.created_at.isoformat(),
         "image": course.image,
+
+        # Include full progress summary
+        "progress": progress_data,
+
         "sections": []
     }
 
@@ -368,6 +418,13 @@ def get_student_full_course(course_id):
         }
 
         for lesson in section.lessons:
+            # check if student completed this lesson
+            progress = Progress.query.filter_by(
+                user_id=user_id,
+                lesson_id=lesson.id,
+                is_completed=True
+            ).first()
+
             lesson_data = {
                 "id": lesson.id,
                 "title": lesson.title,
@@ -379,10 +436,12 @@ def get_student_full_course(course_id):
                 "duration": lesson.duration,
                 "size": lesson.size,
                 "created_at": lesson.created_at.isoformat(),
+                "is_completed": bool(progress),
+                "completed_at": progress.completed_at.isoformat() if progress else None,
                 "quizzes": []
             }
 
-            # attach lesson quizzes
+            # include lesson quizzes
             if hasattr(lesson, "quizzes"):
                 for quiz in lesson.quizzes:
                     lesson_data["quizzes"].append({
