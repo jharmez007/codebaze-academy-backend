@@ -13,6 +13,19 @@ bp = Blueprint("payments", __name__)
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 PAYSTACK_BASE_URL = "https://api.paystack.co"
 
+def get_client_ip():
+    if request.headers.get("X-Forwarded-For"):
+        return request.headers.get("X-Forwarded-For").split(",")[0].strip()
+    return request.remote_addr
+
+def get_country_from_ip(ip):
+    try:
+        response = requests.get(f"https://ipapi.co/{ip}/json/")
+        data = response.json()
+        return data.get("country_name"), data.get("currency")
+    except:
+        return None, None
+    
 @bp.route("/initiate", methods=["POST"])
 @jwt_required()
 def initiate_payment():
@@ -33,6 +46,14 @@ def initiate_payment():
     course = Course.query.get(course_id)
     if not course:
         return jsonify({"error": "Invalid course"}), 404
+
+    client_ip = get_client_ip()
+    country, currency_from_ip = get_country_from_ip(client_ip)
+
+    if country == "Nigeria":
+        currency = "NGN"
+    else:
+        currency = "USD"
 
     # Check if user already paid successfully
     existing_success = Payment.query.filter_by(

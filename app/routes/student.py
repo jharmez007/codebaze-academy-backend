@@ -318,3 +318,84 @@ def get_student_courses():
             "paid_not_enrolled": len(paid_not_enrolled)
         }
     }), 200
+
+@bp.route("/student/courses/<int:course_id>/full-access", methods=["GET"])
+@jwt_required()
+def get_student_full_course(course_id):
+    """
+    Returns full course data ONLY for students who are enrolled.
+    """
+    user_id = get_jwt_identity()
+    student = User.query.get_or_404(user_id)
+
+    # --- Allow only students ---
+    if student.role != "student":
+        return jsonify({"error": "Only students can access full course content"}), 403
+
+    course = Course.query.get_or_404(course_id)
+
+    # --- Check enrollment ---
+    enrollment = Enrollment.query.filter_by(
+        user_id=user_id,
+        course_id=course_id,
+        status="active"
+    ).first()
+
+    if not enrollment:
+        return jsonify({
+            "error": "You are not enrolled in this course. Enroll to gain full access."
+        }), 403
+
+    # Build the deep nested course structure
+    course_data = {
+        "id": course.id,
+        "title": course.title,
+        "slug": getattr(course, "slug", None),
+        "description": course.description,
+        "long_description": course.long_description,
+        "price": course.price,
+        "is_published": course.is_published,
+        "total_lessons": course.total_lessons,
+        "created_at": course.created_at.isoformat(),
+        "image": course.image,
+        "sections": []
+    }
+
+    for section in course.sections:
+        section_data = {
+            "id": section.id,
+            "name": section.name,
+            "description": section.description,
+            "lessons": []
+        }
+
+        for lesson in section.lessons:
+            lesson_data = {
+                "id": lesson.id,
+                "title": lesson.title,
+                "slug": lesson.slug,
+                "notes": lesson.notes,
+                "reference_link": lesson.reference_link,
+                "video_url": lesson.video_url,
+                "document_url": lesson.document_url,
+                "duration": lesson.duration,
+                "size": lesson.size,
+                "created_at": lesson.created_at.isoformat(),
+                "quizzes": []
+            }
+
+            # attach lesson quizzes
+            if hasattr(lesson, "quizzes"):
+                for quiz in lesson.quizzes:
+                    lesson_data["quizzes"].append({
+                        "id": quiz.id,
+                        "question": quiz.question,
+                        "options": quiz.options,
+                        "correct_answer": quiz.correct_answer
+                    })
+
+            section_data["lessons"].append(lesson_data)
+
+        course_data["sections"].append(section_data)
+
+    return jsonify(course_data), 200
