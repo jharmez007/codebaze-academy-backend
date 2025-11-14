@@ -268,7 +268,7 @@ def get_student_courses():
         return jsonify({"error": "Only students can access this endpoint"}), 403
 
     # --- Enrolled Courses ---
-    enrollments = Enrollment.query.filter_by(student_id=user_id).all()
+    enrollments = Enrollment.query.filter_by(user_id=user_id).all()
     enrolled_course_ids = [e.course_id for e in enrollments]
     enrolled_courses = [{
         "course_id": e.course.id,
