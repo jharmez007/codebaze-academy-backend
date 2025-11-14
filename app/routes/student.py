@@ -319,7 +319,7 @@ def get_student_courses():
         }
     }), 200
 
-@bp.route("/student/courses/<int:course_id>/full-access", methods=["GET"])
+@bp.route("/courses/<int:course_id>/full", methods=["GET"])
 @jwt_required()
 def get_student_full_course(course_id):
     """
