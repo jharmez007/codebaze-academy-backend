@@ -260,55 +260,53 @@ def download_invoice(payment_id):
 @bp.route("/my-courses", methods=["GET"])
 @jwt_required()
 def get_student_courses():
-    """Return courses the student has enrolled in and courses paid for but not yet enrolled."""
+    """
+    Return courses the student has enrolled in, and courses they have paid for
+    but enrollment has not been activated yet.
+    """
     user_id = get_jwt_identity()
     student = User.query.get_or_404(user_id)
 
     if student.role != "student":
         return jsonify({"error": "Only students can access this endpoint"}), 403
 
-    # ---------------------------------------------
-    # ENROLLED COURSES
-    # ---------------------------------------------
+    # --------------------------------------------------
+    # Get ALL enrollments for this student
+    # --------------------------------------------------
     enrollments = Enrollment.query.filter_by(user_id=user_id).all()
-    enrolled_course_ids = [e.course_id for e in enrollments]
 
     enrolled_courses = []
-    for e in enrollments:
-        if e.course:
-            course = e.course
-            enrolled_courses.append({
-                "course_id": course.id,
-                "title": course.title,
-                "slug": course.slug,
-                "image": course.image,
-                "total_lessons": course.total_lessons,
-                "progress": e.progress,
-                "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None
-            })
-
-    # ---------------------------------------------
-    # PAID BUT NOT ENROLLED
-    # ---------------------------------------------
-    payments = Payment.query.filter_by(user_id=user_id, status="successful").all()
-
     paid_not_enrolled = []
-    for p in payments:
-        if p.course_id not in enrolled_course_ids and p.course:
-            course = p.course
-            paid_not_enrolled.append({
-                "course_id": course.id,
-                "title": course.title,
-                "slug": course.slug,
-                "image": course.image,
-                "total_lessons": course.total_lessons,
-                "amount": p.amount,
-                "payment_date": p.created_at.isoformat()
-            })
 
-    # ---------------------------------------------
-    # FINAL RESPONSE
-    # ---------------------------------------------
+    for e in enrollments:
+        if not e.course:
+            continue  # avoid issues if course was deleted
+
+        course = e.course
+
+        data = {
+            "course_id": course.id,
+            "title": course.title,
+            "slug": course.slug,
+            "image": course.image,
+            "total_lessons": course.total_lessons,
+            "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
+            "progress": e.progress,
+            "status": e.status
+        }
+
+        # --------------------------------------------------
+        # active → fully enrolled
+        # paid → payment done but enrollment pending
+        # --------------------------------------------------
+        if e.status == "active":
+            enrolled_courses.append(data)
+        elif e.status == "paid":
+            paid_not_enrolled.append(data)
+
+    # --------------------------------------------------
+    # Final structured response
+    # --------------------------------------------------
     return jsonify({
         "student_id": user_id,
         "enrolled_courses": enrolled_courses,
