@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify
+import requests
 from app.extensions import db
 from werkzeug.utils import secure_filename
 from app.models import Course, Lesson, Enrollment
@@ -10,6 +11,7 @@ from app.utils.auth import role_required
 import json
 from moviepy import VideoFileClip
 import os, uuid, re
+from app.utils.currency import get_usd_rate
 
 UPLOAD_VIDEO_FOLDER = os.path.join("static", "uploads", "videos")
 UPLOAD_IMAGE_FOLDER = os.path.join("static", "uploads", "images")
@@ -70,6 +72,19 @@ def format_size(bytes_size):
         bytes_size /= 1024.0
     return f"{bytes_size:.2f} TB"
 
+def get_client_ip():
+    if request.headers.get("X-Forwarded-For"):
+        return request.headers.get("X-Forwarded-For").split(",")[0].strip()
+    return request.remote_addr
+
+def get_country_from_ip(ip):
+    try:
+        response = requests.get(f"https://ipapi.co/{ip}/json/")
+        data = response.json()
+        return data.get("country_name"), data.get("currency")
+    except:
+        return None, None
+
 bp = Blueprint("courses", __name__)
 
 # List all published courses
@@ -77,18 +92,40 @@ bp = Blueprint("courses", __name__)
 def list_courses():
     courses = Course.query.filter_by(is_published=True).all()
     result = []
+
+    client_ip = get_client_ip()
+    country, currency_from_ip = get_country_from_ip(client_ip)
+
+    # Fetch USD rate once to avoid multiple API calls
+    usd_rate = get_usd_rate()
+
     for c in courses:
+        original_price = c.price  # NGN stored as base price
+
+        if country == "Nigeria":
+            display_currency = "NGN"
+            display_price = original_price
+        else:
+            display_currency = "USD"
+            display_price = round(original_price / usd_rate, 2)
+
         result.append({
             "id": c.id,
             "image": c.image,
             "slug": c.slug,
             "title": c.title,
             "description": c.description,
-            "price": c.price,
+            
+            # IMPORTANT: Always include both
+            "original_price": original_price,      # stored NGN price
+            "display_price": display_price,        # shown to user based on country
+            "display_currency": display_currency,
+
             "is_published": c.is_published,
             "total_lessons": c.total_lessons,
             "created_at": c.created_at.isoformat()
         })
+
     return jsonify(result)
 
 @bp.route("/admin", methods=["GET"])
