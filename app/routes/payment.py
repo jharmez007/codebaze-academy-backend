@@ -7,7 +7,6 @@ from app.extensions import db
 from app.models import Enrollment, User, Course
 from app.models.coupon import Coupon
 from app.models.user import Payment
-from app.utils.currency import get_usd_rate
 
 bp = Blueprint("payments", __name__)
 
@@ -48,21 +47,7 @@ def initiate_payment():
     if not course:
         return jsonify({"error": "Invalid course"}), 404
 
-    client_ip = get_client_ip()
-    country, currency_from_ip = get_country_from_ip(client_ip)
-
-    if country == "Nigeria":
-        currency = "NGN"
-    else:
-        currency = "USD"
-
-    usd_rate = get_usd_rate()
-
-    if country == "Nigeria":
-        currency = "NGN"
-    else:
-        currency = "USD"
-        amount = round(amount * usd_rate, 2)
+    
     # Check if user already paid successfully
     existing_success = Payment.query.filter_by(
         user_id=user_id, course_id=course_id, status="successful"
@@ -123,13 +108,9 @@ def initiate_payment():
     payload = {
         "email": email,
         "amount": int(amount * 100),  # convert to kobo correctly
-        "currency": currency,
         "callback_url": "http://localhost:5000/payments/verify",
         "metadata": {
             "slug": slug,
-            "ip": client_ip,
-            "country": country,
-            "charged_currency": currency,
             "course_id": course.id,
             "coupon_code": coupon_code if coupon_code else None,
             "discount_amount": discount_amount,
