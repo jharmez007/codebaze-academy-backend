@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request, send_file
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.user import UserSession, Payment
 from app.extensions import db
-from app.models import User, Enrollment, Course
+from app.models import User, Enrollment, Course, Progress
 from app.utils.auth import role_required
 import os
 from werkzeug.utils import secure_filename
