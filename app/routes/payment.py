@@ -13,117 +13,6 @@ bp = Blueprint("payments", __name__)
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 PAYSTACK_BASE_URL = "https://api.paystack.co"
 
-
-# ----------------------------------------------------------
-# 1️⃣ INITIATE PAYMENT
-# ----------------------------------------------------------
-# @bp.route("/initiate", methods=["POST"])
-# @jwt_required()
-# def initiate_payment():
-#     """Initialize a Paystack transaction."""
-#     data = request.get_json()
-#     email = data.get("email")
-#     amount = data.get("amount")  # Naira
-#     course_id = data.get("course_id")
-
-#     user_id = get_jwt_identity()
-
-#     if not all([email, amount, course_id]):
-#         return jsonify({"error": "Missing fields"}), 400
-
-#     # ✅ Check if course exists
-#     course = Course.query.get(course_id)
-#     if not course:
-#         return jsonify({"error": "Invalid course"}), 404
-
-#     # ✅ Check if user already enrolled or paid
-#     existing_success = Payment.query.filter_by(
-#         user_id=user_id, course_id=course_id, status="successful"
-#     ).first()
-
-#     coupon_code = data.get("coupon_code")
-#     discount_amount = 0
-
-#     if coupon_code:
-#         coupon = Coupon.query.filter_by(code=coupon_code.upper(), is_active=True).first()
-#         if coupon:
-#             # same validation logic as above
-#             if coupon.discount_type == "percent":
-#                 discount_amount = (coupon.discount_value / 100) * amount
-#             else:
-#                 discount_amount = coupon.discount_value
-
-#             amount = max(amount - discount_amount, 0)
-#     if existing_success:
-#         return jsonify({"error": "You have already paid for this course"}), 409
-
-#     existing_enrollment = Enrollment.query.filter_by(
-#         user_id=user_id, course_id=course_id
-#     ).first()
-#     # ✅ Initialize Paystack transaction
-#     headers = {
-#         "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
-#         "Content-Type": "application/json",
-#     }
-#     slug = course.title.lower().replace(" ", "-")
-#     payload = {
-#         "email": email,
-#         "amount": int(amount) * 100,  # convert to kobo
-#         "callback_url": "http://localhost:5000/payments/verify",
-#         "metadata": {
-#             "slug": slug,
-#             "course_id": course.id,
-#             "redirect_url": f"http://localhost:3000/checkout/{slug}"  # frontend route
-#         }
-#     }
-
-#     response = requests.post(
-#         f"{PAYSTACK_BASE_URL}/transaction/initialize",
-#         json=payload,
-#         headers=headers,
-#     )
-
-#     resp_data = response.json()
-
-#     if response.status_code != 200 or not resp_data.get("status"):
-#         return jsonify({
-#             "error": "Failed to initialize payment",
-#             "details": resp_data,
-#         }), 400
-
-#     reference = resp_data["data"]["reference"]
-
-#     # ✅ Save a Payment record (pending)
-#     payment = Payment(
-#         user_id=user_id,
-#         provider="paystack", 
-#         course_id=course_id,
-#         amount=amount,
-#         reference=reference,
-#         status="pending",
-#     )
-#     db.session.add(payment)
-
-#     # ✅ Save reference to enrollment (if exists) or create new
-#     if existing_enrollment:
-#         existing_enrollment.payment_reference = reference
-#     else:
-#         new_enrollment = Enrollment(
-#             user_id=user_id,
-#             course_id=course_id,
-#             status="pending",
-#             payment_reference=reference,
-#         )
-#         db.session.add(new_enrollment)
-
-#     db.session.commit()
-
-#     return jsonify({
-#         "message": "Payment initialized successfully",
-#         "authorization_url": resp_data["data"]["authorization_url"],
-#         "reference": reference,
-#     }), 200
-
 @bp.route("/initiate", methods=["POST"])
 @jwt_required()
 def initiate_payment():
@@ -136,16 +25,16 @@ def initiate_payment():
 
     user_id = get_jwt_identity()
 
-    # ✅ Required field validation
+    # Required field validation
     if not all([email, amount, course_id]):
         return jsonify({"error": "Missing fields"}), 400
 
-    # ✅ Check if course exists
+    # Check if course exists
     course = Course.query.get(course_id)
     if not course:
         return jsonify({"error": "Invalid course"}), 404
 
-    # ✅ Check if user already paid successfully
+    # Check if user already paid successfully
     existing_success = Payment.query.filter_by(
         user_id=user_id, course_id=course_id, status="successful"
     ).first()
@@ -153,7 +42,7 @@ def initiate_payment():
     if existing_success:
         return jsonify({"error": "You have already paid for this course"}), 409
 
-    # ✅ Coupon handling
+    # Coupon handling
     discount_amount = 0
     if coupon_code:
         coupon = Coupon.query.filter_by(code=coupon_code, is_active=True).first()
@@ -190,12 +79,12 @@ def initiate_payment():
         amount = max(amount - discount_amount, 0)
         # coupon.used_count = (coupon.used_count or 0) + 1
 
-    # ✅ Check if enrollment exists
+    # Check if enrollment exists
     existing_enrollment = Enrollment.query.filter_by(
         user_id=user_id, course_id=course_id
     ).first()
 
-    # ✅ Initialize Paystack transaction
+    # Initialize Paystack transaction
     headers = {
         "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
         "Content-Type": "application/json",
@@ -231,7 +120,7 @@ def initiate_payment():
 
     reference = resp_data["data"]["reference"]
 
-    # ✅ Save a Payment record (pending)
+    # Save a Payment record (pending)
     payment = Payment(
         user_id=user_id,
         provider="paystack",
@@ -243,7 +132,7 @@ def initiate_payment():
     )
     db.session.add(payment)
 
-    # ✅ Save or update enrollment
+    # Save or update enrollment
     if existing_enrollment:
         existing_enrollment.payment_reference = reference
     else:

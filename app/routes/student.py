@@ -260,32 +260,55 @@ def download_invoice(payment_id):
 @bp.route("/my-courses", methods=["GET"])
 @jwt_required()
 def get_student_courses():
-    """Return courses the student has enrolled in and paid for but not yet enrolled."""
+    """Return courses the student has enrolled in and courses paid for but not yet enrolled."""
     user_id = get_jwt_identity()
     student = User.query.get_or_404(user_id)
 
     if student.role != "student":
         return jsonify({"error": "Only students can access this endpoint"}), 403
 
-    # --- Enrolled Courses ---
+    # ---------------------------------------------
+    # ENROLLED COURSES
+    # ---------------------------------------------
     enrollments = Enrollment.query.filter_by(user_id=user_id).all()
     enrolled_course_ids = [e.course_id for e in enrollments]
-    enrolled_courses = [{
-        "course_id": e.course.id,
-        "title": e.course.title,
-        "progress": e.progress,
-        "enrolled_at": e.enrolled_at
-    } for e in enrollments if e.course]
 
-    # --- Paid But Not Enrolled ---
+    enrolled_courses = []
+    for e in enrollments:
+        if e.course:
+            course = e.course
+            enrolled_courses.append({
+                "course_id": course.id,
+                "title": course.title,
+                "slug": course.slug,
+                "image": course.image,
+                "total_lessons": course.total_lessons,
+                "progress": e.progress,
+                "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None
+            })
+
+    # ---------------------------------------------
+    # PAID BUT NOT ENROLLED
+    # ---------------------------------------------
     payments = Payment.query.filter_by(user_id=user_id, status="successful").all()
-    paid_not_enrolled = [{
-        "course_id": p.course.id,
-        "title": p.course.title,
-        "amount": p.amount,
-        "payment_date": p.created_at
-    } for p in payments if p.course_id not in enrolled_course_ids]
 
+    paid_not_enrolled = []
+    for p in payments:
+        if p.course_id not in enrolled_course_ids and p.course:
+            course = p.course
+            paid_not_enrolled.append({
+                "course_id": course.id,
+                "title": course.title,
+                "slug": course.slug,
+                "image": course.image,
+                "total_lessons": course.total_lessons,
+                "amount": p.amount,
+                "payment_date": p.created_at.isoformat()
+            })
+
+    # ---------------------------------------------
+    # FINAL RESPONSE
+    # ---------------------------------------------
     return jsonify({
         "student_id": user_id,
         "enrolled_courses": enrolled_courses,
