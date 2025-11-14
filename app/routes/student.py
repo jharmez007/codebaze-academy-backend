@@ -260,55 +260,53 @@ def download_invoice(payment_id):
 @bp.route("/my-courses", methods=["GET"])
 @jwt_required()
 def get_student_courses():
-    """Return courses the student has enrolled in and courses paid for but not yet enrolled."""
+    """
+    Return courses the student has enrolled in, and courses they have paid for
+    but enrollment has not been activated yet.
+    """
     user_id = get_jwt_identity()
     student = User.query.get_or_404(user_id)
 
     if student.role != "student":
         return jsonify({"error": "Only students can access this endpoint"}), 403
 
-    # ---------------------------------------------
-    # ENROLLED COURSES
-    # ---------------------------------------------
+    # --------------------------------------------------
+    # Get ALL enrollments for this student
+    # --------------------------------------------------
     enrollments = Enrollment.query.filter_by(user_id=user_id).all()
-    enrolled_course_ids = [e.course_id for e in enrollments]
 
     enrolled_courses = []
-    for e in enrollments:
-        if e.course:
-            course = e.course
-            enrolled_courses.append({
-                "course_id": course.id,
-                "title": course.title,
-                "slug": course.slug,
-                "image": course.image,
-                "total_lessons": course.total_lessons,
-                "progress": e.progress,
-                "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None
-            })
-
-    # ---------------------------------------------
-    # PAID BUT NOT ENROLLED
-    # ---------------------------------------------
-    payments = Payment.query.filter_by(user_id=user_id, status="successful").all()
-
     paid_not_enrolled = []
-    for p in payments:
-        if p.course_id not in enrolled_course_ids and p.course:
-            course = p.course
-            paid_not_enrolled.append({
-                "course_id": course.id,
-                "title": course.title,
-                "slug": course.slug,
-                "image": course.image,
-                "total_lessons": course.total_lessons,
-                "amount": p.amount,
-                "payment_date": p.created_at.isoformat()
-            })
 
-    # ---------------------------------------------
-    # FINAL RESPONSE
-    # ---------------------------------------------
+    for e in enrollments:
+        if not e.course:
+            continue  # avoid issues if course was deleted
+
+        course = e.course
+
+        data = {
+            "course_id": course.id,
+            "title": course.title,
+            "slug": course.slug,
+            "image": course.image,
+            "total_lessons": course.total_lessons,
+            "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
+            "progress": e.progress,
+            "status": e.status
+        }
+
+        # --------------------------------------------------
+        # active → fully enrolled
+        # paid → payment done but enrollment pending
+        # --------------------------------------------------
+        if e.status == "active":
+            enrolled_courses.append(data)
+        elif e.status == "paid":
+            paid_not_enrolled.append(data)
+
+    # --------------------------------------------------
+    # Final structured response
+    # --------------------------------------------------
     return jsonify({
         "student_id": user_id,
         "enrolled_courses": enrolled_courses,
@@ -318,3 +316,84 @@ def get_student_courses():
             "paid_not_enrolled": len(paid_not_enrolled)
         }
     }), 200
+
+@bp.route("/courses/<int:course_id>/full", methods=["GET"])
+@jwt_required()
+def get_student_full_course(course_id):
+    """
+    Returns full course data ONLY for students who are enrolled.
+    """
+    user_id = get_jwt_identity()
+    student = User.query.get_or_404(user_id)
+
+    # --- Allow only students ---
+    if student.role != "student":
+        return jsonify({"error": "Only students can access full course content"}), 403
+
+    course = Course.query.get_or_404(course_id)
+
+    # --- Check enrollment ---
+    enrollment = Enrollment.query.filter_by(
+        user_id=user_id,
+        course_id=course_id,
+        status="active"
+    ).first()
+
+    if not enrollment:
+        return jsonify({
+            "error": "You are not enrolled in this course. Enroll to gain full access."
+        }), 403
+
+    # Build the deep nested course structure
+    course_data = {
+        "id": course.id,
+        "title": course.title,
+        "slug": getattr(course, "slug", None),
+        "description": course.description,
+        "long_description": course.long_description,
+        "price": course.price,
+        "is_published": course.is_published,
+        "total_lessons": course.total_lessons,
+        "created_at": course.created_at.isoformat(),
+        "image": course.image,
+        "sections": []
+    }
+
+    for section in course.sections:
+        section_data = {
+            "id": section.id,
+            "name": section.name,
+            "description": section.description,
+            "lessons": []
+        }
+
+        for lesson in section.lessons:
+            lesson_data = {
+                "id": lesson.id,
+                "title": lesson.title,
+                "slug": lesson.slug,
+                "notes": lesson.notes,
+                "reference_link": lesson.reference_link,
+                "video_url": lesson.video_url,
+                "document_url": lesson.document_url,
+                "duration": lesson.duration,
+                "size": lesson.size,
+                "created_at": lesson.created_at.isoformat(),
+                "quizzes": []
+            }
+
+            # attach lesson quizzes
+            if hasattr(lesson, "quizzes"):
+                for quiz in lesson.quizzes:
+                    lesson_data["quizzes"].append({
+                        "id": quiz.id,
+                        "question": quiz.question,
+                        "options": quiz.options,
+                        "correct_answer": quiz.correct_answer
+                    })
+
+            section_data["lessons"].append(lesson_data)
+
+        course_data["sections"].append(section_data)
+
+    return jsonify(course_data), 200
