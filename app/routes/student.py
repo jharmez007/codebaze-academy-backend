@@ -178,23 +178,9 @@ def allowed_file(filename):
 
 @bp.route("/profile", methods=["GET"])
 @jwt_required()
-def get_profile():
-    user_id = get_jwt_identity()
-    user = User.query.get_or_404(user_id)
-
-    return jsonify({
-        "id": user.id,
-        "full_name": user.full_name,
-        "email": user.email,
-        "bio": user.bio,
-        "profile_photo": user.profile_photo,
-        "socials": {
-            "facebook": user.social_facebook,
-            "twitter": user.social_twitter,
-            "linkedin": user.social_linkedin
-        }
-    }), 200
-
+def me():
+    user = User.query.get(get_jwt_identity())
+    return jsonify(user.to_dict()), 200
 
 @bp.route("/profile", methods=["PATCH"])
 @jwt_required()
