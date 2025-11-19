@@ -8,6 +8,7 @@ from app.models.user import PendingUser, UserSession
 from datetime import datetime, timedelta
 from app.utils.mailer import send_email
 import uuid
+import hashlib
 import random
 
 bp = Blueprint('auth', __name__)
@@ -143,34 +144,54 @@ def login():
     if not user.is_active:
         return jsonify({"error": "Account suspended"}), 403
 
-    # === Handle Session Management ===
+    #          SESSION MANAGEMENT
     if user.role == "student":
+
+        # --- Remove very old sessions (>30 days) ---
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        UserSession.query.filter(UserSession.created_at < thirty_days_ago).delete()
+        UserSession.query.filter(
+            UserSession.created_at < thirty_days_ago,
+            UserSession.user_id == user.id
+        ).delete()
         db.session.commit()
-        active_sessions = UserSession.query.filter_by(user_id=user.id).count()
-        if active_sessions >= 5:
-            return jsonify({
-                "error": "Maximum session limit (5) reached. Please log out from another device."
-            }), 403
 
-        # Gather basic device + IP info
-        ip = request.remote_addr
-        user_agent = request.headers.get("User-Agent", "Unknown Device")
+        # --- Generate device fingerprint ---
+        ip = request.remote_addr or "0.0.0.0"
+        user_agent = request.headers.get("User-Agent", "Unknown")
+        device_string = f"{user_agent}:{ip}".encode("utf-8")
+        device_hash = hashlib.sha256(device_string).hexdigest()
 
-        # Create a new session record
-        new_session = UserSession(
+        # --- Check if session from this device already exists ---
+        existing_session = UserSession.query.filter_by(
             user_id=user.id,
-            device_info=user_agent,
-            ip_address=ip,
-            location="Unknown",  # (Optional: you can resolve via ipinfo or GeoIP later)
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow()
-        )
-        db.session.add(new_session)
+            device_id=device_hash
+        ).first()
+
+        if not existing_session:
+            # --- Enforce max 5 devices ---
+            active_sessions_count = UserSession.query.filter_by(user_id=user.id).count()
+            if active_sessions_count >= 5:
+                return jsonify({
+                    "error": "Maximum session limit (5 devices) reached. Log out from another device."
+                }), 403
+
+            # --- Create new session entry ---
+            new_session = UserSession(
+                user_id=user.id,
+                device_info=user_agent,
+                ip_address=ip,
+                location="Unknown",
+                device_id=device_hash,
+                last_active=datetime.utcnow()
+            )
+            db.session.add(new_session)
+        else:
+            # Update last_active instead of creating a new session
+            existing_session.last_active = datetime.utcnow()
+
         db.session.commit()
 
-    # === Generate Tokens ===
+    #                    TOKENS
     access_token = create_access_token(
         identity=str(user.id),
         additional_claims={"role": user.role}
@@ -189,6 +210,24 @@ def login():
         }
     }), 200
 
+@bp.route('/logout', methods=['POST'])
+@jwt_required()
+def logout():
+    user_id = get_jwt_identity()
+    ip = request.remote_addr
+    user_agent = request.headers.get("User-Agent", "Unknown")
+
+    device_hash = hashlib.sha256(f"{user_agent}:{ip}".encode()).hexdigest()
+
+    UserSession.query.filter_by(
+        user_id=user_id,
+        device_id=device_hash
+    ).delete()
+
+    db.session.commit()
+
+    return jsonify({"message": "Logged out successfully"}), 200
+
 @bp.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)
 def refresh():
@@ -205,14 +244,8 @@ def refresh():
 @bp.route('/me', methods=['GET'])
 @jwt_required()
 def me():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
-    return jsonify({
-        "id": user.id,
-        "full_name": user.full_name,
-        "email": user.email,
-        "role": user.role
-    })
+    user = User.query.get(get_jwt_identity())
+    return jsonify(user.to_dict()), 200
 
 @bp.route("/auth/verify-token", methods=["POST"])
 def verify_token_login():
@@ -242,7 +275,6 @@ def verify_token_login():
     db.session.delete(pending)
     db.session.commit()
 
-    # ✅ FIXED: identity must be a string
     access_token = create_access_token(
         identity=str(new_user.id),
         additional_claims={"role": new_user.role},
@@ -308,10 +340,10 @@ def forgot_password():
     if not user:
         return jsonify({"error": "No account found with that email"}), 404
 
-    # ✅ Generate a secure reset token
+    #  Generate a secure reset token
     reset_token = uuid.uuid4().hex
 
-    # ✅ Create or update pending reset record (reuse PendingUser table)
+    # Create or update pending reset record (reuse PendingUser table)
     pending = PendingUser.query.filter_by(email=email).first()
     if pending:
         pending.one_time_token = reset_token
@@ -327,7 +359,7 @@ def forgot_password():
 
     db.session.commit()
 
-    # ✅ Determine correct frontend URL based on role
+    # Determine correct frontend URL based on role
     if user.role == "admin":
         reset_link = f"http://localhost:3000/admin-reset-password?token={reset_token}&email={email}"
     else:
@@ -401,7 +433,7 @@ def reset_password():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # ✅ Update password
+    # Update password
     user.set_password(new_password)
     db.session.delete(pending)  # clear token after successful reset
     db.session.commit()
