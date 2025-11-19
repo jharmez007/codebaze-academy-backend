@@ -441,3 +441,27 @@ def reset_password():
     return jsonify({
         "message": "Password reset successful. You can now log in with your new password."
     }), 200
+
+@bp.route('/delete-account', methods=['DELETE'])
+@jwt_required()
+def delete_account():
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+
+    data = request.get_json() or {}
+    password = data.get("password")
+
+    if not user.check_password(password):
+        return jsonify({"error": "Incorrect password"}), 401
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    # Delete all active sessions for this user
+    UserSession.query.filter_by(user_id=user_id).delete()
+
+    # Delete the user
+    db.session.delete(user)
+    db.session.commit()
+
+    return jsonify({"message": "Account deleted successfully"}), 200
