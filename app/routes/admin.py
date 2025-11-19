@@ -79,7 +79,7 @@ def analytics_overview():
         .join(Enrollment, Enrollment.user_id == User.id)
         .join(Course, Course.id == Enrollment.course_id)
         .order_by(Enrollment.enrolled_at.desc())
-        .limit(5)
+        .limit(3)
         .all()
     )
 
