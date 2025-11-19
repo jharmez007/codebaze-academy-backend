@@ -14,9 +14,7 @@ class User(db.Model):
     # Profile fields
     bio = db.Column(db.Text, nullable=True)
     profile_photo = db.Column(db.String(255), nullable=True)
-    social_facebook = db.Column(db.String(255), nullable=True)
-    social_twitter = db.Column(db.String(255), nullable=True)
-    social_linkedin = db.Column(db.String(255), nullable=True)
+    social_handles = db.Column(db.JSON, default=dict)
     phone = db.Column(db.String(50), nullable=True)
 
     enrollments = db.relationship('Enrollment', back_populates='student')
@@ -31,6 +29,29 @@ class User(db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "full_name": self.full_name,
+            "email": self.email,
+            "role": self.role,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat(),
+
+            "bio": self.bio,
+            "profile_photo": self.profile_photo,
+            "social_handles": self.social_handles,
+            "phone": self.phone,
+
+            # Summary of relationships (not full objects to avoid recursion)
+            "enrollments_count": len(self.enrollments),
+            "progress_count": len(self.progress),
+            "comments_count": len(self.comments),
+            "payments_count": len(self.payments),
+            "coupons_count": len(self.coupons),
+            "sessions_count": len(self.sessions)
+        }
 
 class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)

@@ -244,14 +244,8 @@ def refresh():
 @bp.route('/me', methods=['GET'])
 @jwt_required()
 def me():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
-    return jsonify({
-        "id": user.id,
-        "full_name": user.full_name,
-        "email": user.email,
-        "role": user.role
-    })
+    user = User.query.get(get_jwt_identity())
+    return jsonify(user.to_dict()), 200
 
 @bp.route("/auth/verify-token", methods=["POST"])
 def verify_token_login():
@@ -281,7 +275,6 @@ def verify_token_login():
     db.session.delete(pending)
     db.session.commit()
 
-    # ✅ FIXED: identity must be a string
     access_token = create_access_token(
         identity=str(new_user.id),
         additional_claims={"role": new_user.role},
@@ -347,10 +340,10 @@ def forgot_password():
     if not user:
         return jsonify({"error": "No account found with that email"}), 404
 
-    # ✅ Generate a secure reset token
+    #  Generate a secure reset token
     reset_token = uuid.uuid4().hex
 
-    # ✅ Create or update pending reset record (reuse PendingUser table)
+    # Create or update pending reset record (reuse PendingUser table)
     pending = PendingUser.query.filter_by(email=email).first()
     if pending:
         pending.one_time_token = reset_token
@@ -366,7 +359,7 @@ def forgot_password():
 
     db.session.commit()
 
-    # ✅ Determine correct frontend URL based on role
+    # Determine correct frontend URL based on role
     if user.role == "admin":
         reset_link = f"http://localhost:3000/admin-reset-password?token={reset_token}&email={email}"
     else:
@@ -440,7 +433,7 @@ def reset_password():
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    # ✅ Update password
+    # Update password
     user.set_password(new_password)
     db.session.delete(pending)  # clear token after successful reset
     db.session.commit()
