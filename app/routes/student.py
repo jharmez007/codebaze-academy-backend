@@ -134,31 +134,31 @@ def list_sessions():
     return jsonify(result), 200
 
 
-@bp.route("/sessions/new", methods=["POST"])
-@jwt_required()
-def create_session():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
-    if user.role != "student":
-        return jsonify({"error": "Only students can create sessions"}), 403
+# @bp.route("/sessions/new", methods=["POST"])
+# @jwt_required()
+# def create_session():
+#     user_id = get_jwt_identity()
+#     user = User.query.get(user_id)
+#     if user.role != "student":
+#         return jsonify({"error": "Only students can create sessions"}), 403
 
-    # Check if already has 5 active sessions
-    active_sessions = UserSession.query.filter_by(user_id=user_id).count()
-    if active_sessions >= 5:
-        return jsonify({"error": "Maximum session limit (5) reached"}), 403
+#     # Check if already has 5 active sessions
+#     active_sessions = UserSession.query.filter_by(user_id=user_id).count()
+#     if active_sessions >= 5:
+#         return jsonify({"error": "Maximum session limit (5) reached"}), 403
 
-    ip = request.remote_addr
-    user_agent = request.headers.get('User-Agent', 'Unknown Device')
+#     ip = request.remote_addr
+#     user_agent = request.headers.get('User-Agent', 'Unknown Device')
 
-    new_session = UserSession(
-        user_id=user_id,
-        device_info=user_agent,
-        ip_address=ip,
-        location="Unknown",  # or resolved via IP service
-    )
-    db.session.add(new_session)
-    db.session.commit()
-    return jsonify({"message": "Session created successfully"}), 201
+#     new_session = UserSession(
+#         user_id=user_id,
+#         device_info=user_agent,
+#         ip_address=ip,
+#         location="Unknown",  # or resolved via IP service
+#     )
+#     db.session.add(new_session)
+#     db.session.commit()
+#     return jsonify({"message": "Session created successfully"}), 201
 
 
 @bp.route("/sessions/<int:session_id>", methods=["DELETE"])
@@ -205,9 +205,14 @@ def update_profile():
 
     user.full_name = data.get("full_name", user.full_name)
     user.bio = data.get("bio", user.bio)
-    user.social_facebook = data.get("facebook", user.social_facebook)
-    user.social_twitter = data.get("twitter", user.social_twitter)
-    user.social_linkedin = data.get("linkedin", user.social_linkedin)
+
+    social_handles = data.get("social_handles", {})
+    if isinstance(social_handles, dict):
+        # Merge into existing JSON, do not replace entire object unless wanted
+        for platform, link in social_handles.items():
+            if link:
+                user.social_handles[platform] = link
+
 
     if "photo" in request.files:
         photo = request.files["photo"]
