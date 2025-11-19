@@ -68,5 +68,7 @@ class UserSession(db.Model):
     location = db.Column(db.String(255))  # city or country from IP (optional)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_active = db.Column(db.DateTime, default=datetime.utcnow)
+    device_id = db.Column(db.String(128), nullable=False)  # hashed device identity
+
 
     user = db.relationship("User", back_populates="sessions")
