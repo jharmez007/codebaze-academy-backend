@@ -1,16 +1,19 @@
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, jsonify, request, send_file, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.user import UserSession, Payment
 from app.extensions import db
 from app.models import User, Enrollment, Course, Progress
 from app.utils.auth import role_required
 import os
+import json
 from werkzeug.utils import secure_filename
 from reportlab.pdfgen import canvas
 
 from datetime import datetime
 
 bp = Blueprint("students", __name__)
+UPLOAD_FOLDER = os.path.join("static", "uploads", "profile_photos")
+
 
 @bp.route("/", methods=["GET"])
 @jwt_required()
@@ -192,20 +195,33 @@ def update_profile():
     user.full_name = data.get("full_name", user.full_name)
     user.bio = data.get("bio", user.bio)
 
-    social_handles = data.get("social_handles", {})
-    if isinstance(social_handles, dict):
-        # Merge into existing JSON, do not replace entire object unless wanted
-        for platform, link in social_handles.items():
-            if link:
-                user.social_handles[platform] = link
+    # Parse social_handles JSON string
+    social_handles_raw = data.get("social_handles")
+    if social_handles_raw:
+        try:
+            social_handles = json.loads(social_handles_raw)
+            if isinstance(social_handles, dict):
+                for platform, link in social_handles.items():
+                    if link:
+                        user.social_handles[platform] = link
+        except json.JSONDecodeError:
+            return jsonify({"error": "Invalid social_handles JSON"}), 400
 
-
+    # Photo upload
     if "photo" in request.files:
         photo = request.files["photo"]
         if photo and allowed_file(photo.filename):
             filename = secure_filename(photo.filename)
-            photo.save(os.path.join(UPLOAD_FOLDER, filename))
-            user.profile_photo = f"/{UPLOAD_FOLDER}/{filename}"
+
+            # Absolute path is safer
+            upload_path = os.path.join(current_app.root_path, "static", "uploads", "profile_photos")
+            os.makedirs(upload_path, exist_ok=True)
+
+            save_path = os.path.join(upload_path, filename)
+            photo.save(save_path)
+
+            # Public URL for frontend
+            user.profile_photo = f"/static/uploads/profile_photos/{filename}"
 
     db.session.commit()
     return jsonify({"message": "Profile updated successfully"}), 200
