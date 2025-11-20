@@ -188,12 +188,20 @@ def me():
 @bp.route("/profile", methods=["PATCH"])
 @jwt_required()
 def update_profile():
+    import json
+    from flask import current_app
+
     user_id = get_jwt_identity()
     user = User.query.get_or_404(user_id)
     data = request.form
 
+    # Basic field updates
     user.full_name = data.get("full_name", user.full_name)
     user.bio = data.get("bio", user.bio)
+
+    # Ensure social_handles is initialized
+    if user.social_handles is None:
+        user.social_handles = {}
 
     # Parse social_handles JSON string
     social_handles_raw = data.get("social_handles")
@@ -207,23 +215,28 @@ def update_profile():
         except json.JSONDecodeError:
             return jsonify({"error": "Invalid social_handles JSON"}), 400
 
-    # Photo upload
+    # Handle photo upload
     if "photo" in request.files:
         photo = request.files["photo"]
         if photo and allowed_file(photo.filename):
             filename = secure_filename(photo.filename)
 
-            # Absolute path is safer
-            upload_path = os.path.join(current_app.root_path, "static", "uploads", "profile_photos")
+            upload_path = os.path.join(
+                current_app.root_path,
+                "static",
+                "uploads",
+                "profile_photos"
+            )
             os.makedirs(upload_path, exist_ok=True)
 
             save_path = os.path.join(upload_path, filename)
             photo.save(save_path)
 
-            # Public URL for frontend
+            # Save as public URL
             user.profile_photo = f"/static/uploads/profile_photos/{filename}"
 
     db.session.commit()
+
     return jsonify({"message": "Profile updated successfully"}), 200
 
 @bp.route("/payments", methods=["GET"])
