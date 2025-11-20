@@ -8,6 +8,11 @@ import os
 import json
 from werkzeug.utils import secure_filename
 from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.lib import colors
 import io
 from datetime import datetime
 
@@ -263,19 +268,58 @@ def download_invoice(payment_id):
     payment = Payment.query.filter_by(id=payment_id, user_id=user_id).first_or_404()
 
     buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer)
-    pdf.drawString(100, 800, "Course Payment Invoice")
-    pdf.drawString(100, 780, f"Name: {payment.user.full_name}")
-    pdf.drawString(100, 760, f"Email: {payment.user.email}")
-    pdf.drawString(100, 740, f"Course: {payment.course.title}")
-    pdf.drawString(100, 720, f"Amount Paid: ₦{payment.amount}")
-    pdf.drawString(100, 700, f"Status: {payment.status}")
-    pdf.drawString(100, 680, f"Date: {payment.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
-    pdf.showPage()
-    pdf.save()
+
+    # Styled PDF
+    doc = SimpleDocTemplate(buffer, pagesize=LETTER)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # Header / Title
+    title_style = styles["Title"]
+    elements.append(Paragraph("Course Payment Invoice", title_style))
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # Customer Info
+    info_data = [
+        ["Name:", payment.user.full_name],
+        ["Email:", payment.user.email],
+        ["Course:", payment.course.title],
+        ["Amount Paid:", f"₦{payment.amount:,}"],
+        ["Status:", payment.status.title()],
+        ["Date:", payment.created_at.strftime('%Y-%m-%d %H:%M:%S')],
+    ]
+
+    table = Table(info_data, colWidths=[120, 300])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
+        ('BOX', (0, 0), (-1, -1), 1, colors.black),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('FONT', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+    ]))
+
+    elements.append(table)
+    elements.append(Spacer(1, 0.5 * inch))
+
+    # Footer
+    footer = Paragraph(
+        "Thank you for your payment.<br/>CodeBaze Academy © 2025",
+        styles["Normal"]
+    )
+    elements.append(footer)
+
+    doc.build(elements)
+
     buffer.seek(0)
 
-    return send_file(buffer, as_attachment=True, download_name="invoice.pdf", mimetype="application/pdf")
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"invoice_{payment.id}.pdf",
+        mimetype="application/pdf"
+    )
 
 @bp.route("/my-courses", methods=["GET"])
 @jwt_required()
