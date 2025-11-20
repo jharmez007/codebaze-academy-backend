@@ -8,7 +8,7 @@ import os
 import json
 from werkzeug.utils import secure_filename
 from reportlab.pdfgen import canvas
-
+import io
 from datetime import datetime
 
 bp = Blueprint("students", __name__)
