@@ -4,8 +4,11 @@ from app.models import User
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, create_refresh_token
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import timedelta
-from app.models.user import PendingUser, UserSession
+from app.models.user import PendingUser, UserSession, Payment
 from app.models.enrollment import Enrollment
+from app.models.progress import Progress
+from app.models.comment import Comment
+from app.models.coupon import Coupon
 from datetime import datetime, timedelta
 from app.utils.mailer import send_email
 import uuid
@@ -461,17 +464,20 @@ def delete_account():
     if not user.check_password(password):
         return jsonify({"error": "Incorrect password"}), 401
 
-    # Delete all user sessions
+    # Delete dependent rows first (to satisfy FK constraints)
+    Payment.query.filter_by(user_id=user_id).delete()
+    Enrollment.query.filter_by(user_id=user_id).delete()
+    Progress.query.filter_by(user_id=user_id).delete()
+    Comment.query.filter_by(user_id=user_id).delete()
+    Coupon.query.filter_by(user_id=user_id).delete()
     UserSession.query.filter_by(user_id=user_id).delete()
 
-    # Delete enrollments
-    Enrollment.query.filter_by(user_id=user_id).delete()
-
-    # Delete the user
+    # Finally delete the user
     db.session.delete(user)
     db.session.commit()
 
     return jsonify({"message": "Account deleted successfully"}), 200
+
 
 @bp.route("/auth/change-email", methods=["POST"])
 @jwt_required()
