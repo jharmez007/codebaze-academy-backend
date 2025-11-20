@@ -203,8 +203,7 @@ def update_profile():
             filename = secure_filename(photo.filename)
 
             upload_path = os.path.join(
-                current_app.root_path,
-                "static",
+                current_app.static_folder,
                 "uploads",
                 "profile_photos"
             )
