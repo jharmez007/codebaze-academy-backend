@@ -281,12 +281,12 @@ def download_invoice(payment_id):
 
     # Customer Info
     info_data = [
-        ["Name:", payment.user.full_name],
-        ["Email:", payment.user.email],
-        ["Course:", payment.course.title],
-        ["Amount Paid:", f"₦{payment.amount:,}"],
-        ["Status:", payment.status.title()],
-        ["Date:", payment.created_at.strftime('%Y-%m-%d %H:%M:%S')],
+        ["Name", payment.user.full_name],
+        ["Email", payment.user.email],
+        ["Course", payment.course.title],
+        ["Amount Paid", f"{payment.amount:,}Naira"],
+        ["Status", payment.status.title()],
+        ["Date", payment.created_at.strftime('%Y-%m-%d %H:%M:%S')],
     ]
 
     table = Table(info_data, colWidths=[120, 300])

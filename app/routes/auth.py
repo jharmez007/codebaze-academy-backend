@@ -147,7 +147,7 @@ def login():
     #          SESSION MANAGEMENT
     if user.role == "student":
 
-        # --- Remove very old sessions (>30 days) ---
+        # Remove very old sessions (>30 days)
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
         UserSession.query.filter(
             UserSession.created_at < thirty_days_ago,
@@ -155,27 +155,29 @@ def login():
         ).delete()
         db.session.commit()
 
-        # --- Generate device fingerprint ---
+        # Generate device fingerprint
         ip = request.remote_addr or "0.0.0.0"
         user_agent = request.headers.get("User-Agent", "Unknown")
         device_string = f"{user_agent}:{ip}".encode("utf-8")
         device_hash = hashlib.sha256(device_string).hexdigest()
 
-        # --- Check if session from this device already exists ---
+        # Check if session from this device already exists
         existing_session = UserSession.query.filter_by(
             user_id=user.id,
             device_id=device_hash
         ).first()
 
         if not existing_session:
-            # --- Enforce max 5 devices ---
-            active_sessions_count = UserSession.query.filter_by(user_id=user.id).count()
-            if active_sessions_count >= 5:
-                return jsonify({
-                    "error": "Maximum session limit (5 devices) reached. Log out from another device."
-                }), 403
+            # Count active sessions
+            active_sessions = UserSession.query.filter_by(user_id=user.id).order_by(UserSession.created_at.asc()).all()
 
-            # --- Create new session entry ---
+            if len(active_sessions) >= 5:
+                # 👉 Auto-remove oldest session instead of blocking user
+                oldest_session = active_sessions[0]
+                db.session.delete(oldest_session)
+                db.session.commit()
+
+            # Create new session entry
             new_session = UserSession(
                 user_id=user.id,
                 device_info=user_agent,
@@ -185,8 +187,9 @@ def login():
                 last_active=datetime.utcnow()
             )
             db.session.add(new_session)
+
         else:
-            # Update last_active instead of creating a new session
+            # Update existing session last_active
             existing_session.last_active = datetime.utcnow()
 
         db.session.commit()
