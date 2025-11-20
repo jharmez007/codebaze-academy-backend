@@ -22,7 +22,6 @@ Thumbs.db
 
 # Environment variables
 .env
-static/
 static/uploads/
 static/uploads/videos/
 static/uploads/docs/
