@@ -5,6 +5,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import timedelta
 from app.models.user import PendingUser, UserSession
+from app.models.enrollment import Enrollment
 from datetime import datetime, timedelta
 from app.utils.mailer import send_email
 import uuid
@@ -451,17 +452,20 @@ def delete_account():
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
 
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
     data = request.get_json() or {}
     password = data.get("password")
 
     if not user.check_password(password):
         return jsonify({"error": "Incorrect password"}), 401
 
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-
-    # Delete all active sessions for this user
+    # Delete all user sessions
     UserSession.query.filter_by(user_id=user_id).delete()
+
+    # Delete enrollments
+    Enrollment.query.filter_by(user_id=user_id).delete()
 
     # Delete the user
     db.session.delete(user)

@@ -17,7 +17,11 @@ class User(db.Model):
     social_handles = db.Column(db.JSON, default=dict)
     phone = db.Column(db.String(50), nullable=True)
 
-    enrollments = db.relationship('Enrollment', back_populates='student')
+    enrollments = db.relationship(
+        'Enrollment',
+        back_populates='student',
+        cascade='all, delete-orphan'
+    )
     progress = db.relationship('Progress', back_populates='student')
     comments = db.relationship('Comment', back_populates='user')
     payments = db.relationship('Payment', back_populates='user')
