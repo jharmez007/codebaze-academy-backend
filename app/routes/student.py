@@ -1,4 +1,6 @@
-from flask import Blueprint, jsonify, request, send_file, current_app
+from flask import Blueprint, jsonify, request, send_file, current_app, render_template, url_for
+import uuid
+import io
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.user import UserSession, Payment
 from app.extensions import db
@@ -7,13 +9,14 @@ from app.utils.auth import role_required
 import os
 import json
 from werkzeug.utils import secure_filename
-from reportlab.pdfgen import canvas
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.pagesizes import LETTER
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.units import inch
-from reportlab.lib import colors
-import io
+# from reportlab.pdfgen import canvas
+# from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+# from reportlab.lib.pagesizes import LETTER
+# from reportlab.lib.styles import getSampleStyleSheet
+# from reportlab.lib.units import inch
+# from reportlab.lib import colors
+# import io
+from weasyprint import HTML
 from datetime import datetime
 
 bp = Blueprint("students", __name__)
@@ -142,33 +145,6 @@ def list_sessions():
     return jsonify(result), 200
 
 
-# @bp.route("/sessions/new", methods=["POST"])
-# @jwt_required()
-# def create_session():
-#     user_id = get_jwt_identity()
-#     user = User.query.get(user_id)
-#     if user.role != "student":
-#         return jsonify({"error": "Only students can create sessions"}), 403
-
-#     # Check if already has 5 active sessions
-#     active_sessions = UserSession.query.filter_by(user_id=user_id).count()
-#     if active_sessions >= 5:
-#         return jsonify({"error": "Maximum session limit (5) reached"}), 403
-
-#     ip = request.remote_addr
-#     user_agent = request.headers.get('User-Agent', 'Unknown Device')
-
-#     new_session = UserSession(
-#         user_id=user_id,
-#         device_info=user_agent,
-#         ip_address=ip,
-#         location="Unknown",  # or resolved via IP service
-#     )
-#     db.session.add(new_session)
-#     db.session.commit()
-#     return jsonify({"message": "Session created successfully"}), 201
-
-
 @bp.route("/sessions/<int:session_id>", methods=["DELETE"])
 @jwt_required()
 def delete_session(session_id):
@@ -260,66 +236,96 @@ def list_payments():
 
     return jsonify(result), 200
 
-
 @bp.route("/payments/<int:payment_id>/invoice", methods=["GET"])
 @jwt_required()
 def download_invoice(payment_id):
     user_id = get_jwt_identity()
     payment = Payment.query.filter_by(id=payment_id, user_id=user_id).first_or_404()
 
-    buffer = io.BytesIO()
+    invoice_number = str(uuid.uuid4())[:8].upper()  # Example: 'A93F12C8'
 
-    # Styled PDF
-    doc = SimpleDocTemplate(buffer, pagesize=LETTER)
-    styles = getSampleStyleSheet()
-    elements = []
+    # Logo path inside static folder
+    logo_url = url_for('static', filename='images/codebaze_logo.png', _external=True)
 
-    # Header / Title
-    title_style = styles["Title"]
-    elements.append(Paragraph("Course Payment Invoice", title_style))
-    elements.append(Spacer(1, 0.3 * inch))
-
-    # Customer Info
-    info_data = [
-        ["Name", payment.user.full_name],
-        ["Email", payment.user.email],
-        ["Course", payment.course.title],
-        ["Amount Paid", f"{payment.amount:,}Naira"],
-        ["Status", payment.status.title()],
-        ["Date", payment.created_at.strftime('%Y-%m-%d %H:%M:%S')],
-    ]
-
-    table = Table(info_data, colWidths=[120, 300])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
-        ('BOX', (0, 0), (-1, -1), 1, colors.black),
-        ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('FONT', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-    ]))
-
-    elements.append(table)
-    elements.append(Spacer(1, 0.5 * inch))
-
-    # Footer
-    footer = Paragraph(
-        "Thank you for your payment.<br/>CodeBaze Academy © 2025",
-        styles["Normal"]
+    html = render_template(
+        "invoice.html",
+        logo_url=logo_url,
+        invoice_number=invoice_number,
+        name=payment.user.full_name,
+        email=payment.user.email,
+        course=payment.course.title,
+        status=payment.status.title(),
+        amount=f"{payment.amount:,.2f}",
+        date=payment.created_at.strftime("%B %d, %Y")
     )
-    elements.append(footer)
 
-    doc.build(elements)
-
-    buffer.seek(0)
+    pdf = HTML(string=html).write_pdf()
 
     return send_file(
-        buffer,
+        io.BytesIO(pdf),
+        download_name=f"invoice_{invoice_number}.pdf",
         as_attachment=True,
-        download_name=f"invoice_{payment.id}.pdf",
         mimetype="application/pdf"
     )
+# @bp.route("/payments/<int:payment_id>/invoice", methods=["GET"])
+# @jwt_required()
+# def download_invoice(payment_id):
+#     user_id = get_jwt_identity()
+#     payment = Payment.query.filter_by(id=payment_id, user_id=user_id).first_or_404()
+
+#     buffer = io.BytesIO()
+
+#     # Styled PDF
+#     doc = SimpleDocTemplate(buffer, pagesize=LETTER)
+#     styles = getSampleStyleSheet()
+#     elements = []
+
+#     # Header / Title
+#     title_style = styles["Title"]
+#     elements.append(Paragraph("Course Payment Invoice", title_style))
+#     elements.append(Spacer(1, 0.3 * inch))
+
+#     # Customer Info
+#     info_data = [
+#         ["Name", payment.user.full_name],
+#         ["Email", payment.user.email],
+#         ["Course", payment.course.title],
+#         ["Amount Paid", f"{payment.amount:,}Naira"],
+#         ["Status", payment.status.title()],
+#         ["Date", payment.created_at.strftime('%Y-%m-%d %H:%M:%S')],
+#     ]
+
+#     table = Table(info_data, colWidths=[120, 300])
+#     table.setStyle(TableStyle([
+#         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
+#         ('BOX', (0, 0), (-1, -1), 1, colors.black),
+#         ('INNERGRID', (0, 0), (-1, -1), 0.5, colors.grey),
+#         ('FONT', (0, 0), (-1, -1), 'Helvetica'),
+#         ('FONTSIZE', (0, 0), (-1, -1), 11),
+#         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+#         ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+#     ]))
+
+#     elements.append(table)
+#     elements.append(Spacer(1, 0.5 * inch))
+
+#     # Footer
+#     footer = Paragraph(
+#         "Thank you for your payment.<br/>CodeBaze Academy © 2025",
+#         styles["Normal"]
+#     )
+#     elements.append(footer)
+
+#     doc.build(elements)
+
+#     buffer.seek(0)
+
+#     return send_file(
+#         buffer,
+#         as_attachment=True,
+#         download_name=f"invoice_{payment.id}.pdf",
+#         mimetype="application/pdf"
+#     )
 
 @bp.route("/my-courses", methods=["GET"])
 @jwt_required()
