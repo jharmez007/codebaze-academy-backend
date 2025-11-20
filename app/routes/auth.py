@@ -465,3 +465,110 @@ def delete_account():
     db.session.commit()
 
     return jsonify({"message": "Account deleted successfully"}), 200
+
+@bp.route("/auth/change-email", methods=["POST"])
+@jwt_required()
+def change_email():
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+
+    new_email = data.get("new_email", "").strip().lower()
+    if not new_email:
+        return jsonify({"error": "New email is required"}), 400
+
+    # Ensure email isn't already used
+    if User.query.filter_by(email=new_email).first():
+        return jsonify({"error": "Email already in use"}), 409
+
+    # Generate a verification code
+    verification_code = str(random.randint(100000, 999999))
+
+    # Save/Update pending record
+    pending = PendingUser.query.filter_by(email=new_email).first()
+    if pending:
+        pending.one_time_token = verification_code
+        pending.created_at = datetime.utcnow()
+        pending.full_name = User.query.get(user_id).full_name
+    else:
+        pending = PendingUser(
+            email=new_email,
+            full_name=User.query.get(user_id).full_name,
+            one_time_token=verification_code,
+            created_at=datetime.utcnow()
+        )
+        db.session.add(pending)
+
+    db.session.commit()
+
+    # Send verification email
+    subject = "Verify Your New Email - CodeBaze Academy"
+    text_body = render_template(
+        "emails/change_email.txt",
+        full_name=User.query.get(user_id).full_name,
+        verification_code=verification_code
+    )
+    html_body = render_template(
+        "emails/change_email.html",
+        full_name=User.query.get(user_id).full_name,
+        verification_code=verification_code
+    )
+
+    send_email(to=new_email, subject=subject, body=text_body, html=html_body)
+
+    return jsonify({"message": "Verification code sent to new email."}), 200
+
+@bp.route("/auth/verify-new-email", methods=["POST"])
+@jwt_required()
+def verify_new_email():
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+
+    email = data.get("email", "").strip().lower()
+    token = data.get("token", "").strip()
+
+    if not all([email, token]):
+        return jsonify({"error": "Email and token are required"}), 400
+
+    pending = PendingUser.query.filter_by(email=email).first()
+    if not pending or pending.one_time_token != token:
+        return jsonify({"error": "Invalid or expired token"}), 401
+
+    # Apply email change
+    user = User.query.get(user_id)
+    user.email = email
+
+    db.session.delete(pending)  # cleanup
+    db.session.commit()
+
+    return jsonify({"message": "Email updated successfully.", "email": email}), 200
+
+@bp.route("/auth/change-password", methods=["POST"])
+@jwt_required()
+def change_password():
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+
+    old_password = data.get("old_password")
+    new_password = data.get("new_password")
+
+    if not all([old_password, new_password]):
+        return jsonify({"error": "Old and new passwords are required"}), 400
+
+    if len(new_password) < 6:
+        return jsonify({"error": "New password must be at least 6 characters"}), 400
+
+    user = User.query.get(user_id)
+
+    # Prevent crash if user has null password_hash
+    if not user.password_hash:
+        return jsonify({"error": "Password is not set for this account"}), 400
+
+    # Validate old password via hashed comparison
+    if not user.check_password(old_password):
+        return jsonify({"error": "Incorrect old password"}), 401
+
+    # Save hashed new password
+    user.set_password(new_password)
+    db.session.commit()
+
+    return jsonify({"message": "Password updated successfully."}), 200
