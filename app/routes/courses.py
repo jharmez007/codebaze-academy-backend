@@ -84,7 +84,7 @@ def list_courses():
             price = convert_ngn_to_usd(c.price)
         else:
             price = c.price
-            
+
         result.append({
             "id": c.id,
             "image": c.image,
@@ -120,10 +120,13 @@ def list_courses_all():
 def get_course(course_id):
     course = Course.query.get_or_404(course_id)
     user_id = get_jwt_identity()
+    user_currency = detect_currency()
 
+    # Default values
     is_paid = False
     is_enrolled = False
 
+    # Check enrollment & payment only if user is logged in
     if user_id:
         enrollment = Enrollment.query.filter_by(
             user_id=user_id,
@@ -133,9 +136,11 @@ def get_course(course_id):
 
         if enrollment:
             is_enrolled = True
-        # Check if the user has made a successful payment for this course
+
         payment = (
-            Payment.query.join(Enrollment, Enrollment.payment_reference == Payment.reference)
+            Payment.query.join(
+                Enrollment, Enrollment.payment_reference == Payment.reference
+            )
             .filter(
                 Payment.user_id == user_id,
                 Payment.status == "successful",
@@ -147,13 +152,25 @@ def get_course(course_id):
         if payment:
             is_paid = True
 
+    # -----------------------------------
+    # Currency conversion
+    # -----------------------------------
+    if user_currency == "USD":
+        price = convert_ngn_to_usd(course.price)
+    else:
+        price = course.price
+
+    # -----------------------------------
+    # Build response
+    # -----------------------------------
     response = {
         "id": course.id,
         "title": course.title,
         "slug": course.slug,
         "description": course.description,
         "long_description": course.long_description,
-        "price": course.price,
+        "price": price,
+        "currency": user_currency,
         "is_published": course.is_published,
         "total_lessons": course.total_lessons,
         "created_at": course.created_at.isoformat(),
@@ -161,17 +178,18 @@ def get_course(course_id):
         "sections": [],
         "user_id": user_id,
         "is_enrolled": is_enrolled,
-        "is_paid": is_paid  # ✅ Add payment status
+        "is_paid": is_paid
     }
 
-    for sub in course.sections:
+    for section in course.sections:
         sub_data = {
-            "id": sub.id,
-            "name": sub.name,
-            "description": sub.description,
+            "id": section.id,
+            "name": section.name,
+            "description": section.description,
             "lessons": []
         }
-        for lesson in sub.lessons:
+
+        for lesson in section.lessons:
             lesson_data = {
                 "id": lesson.id,
                 "title": lesson.title,
@@ -179,9 +197,11 @@ def get_course(course_id):
                 "size": lesson.size
             }
             sub_data["lessons"].append(lesson_data)
+
         response["sections"].append(sub_data)
 
     return jsonify(response)
+
 
 @bp.route("/<int:course_id>/full", methods=["GET"])
 @jwt_required(optional=True)
