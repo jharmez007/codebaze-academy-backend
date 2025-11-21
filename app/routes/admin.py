@@ -1,5 +1,6 @@
-from flask import Blueprint, jsonify
-from flask_jwt_extended import jwt_required
+from flask import Blueprint, jsonify, request
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from app.models.user import ExchangeRate
 from app.models import User, Course, Enrollment
 from app.models.coupon import Coupon
 from app.models.user import Payment
@@ -102,4 +103,58 @@ def analytics_overview():
         "revenueByCourse": revenue_by_course_data,
         "enrollmentsData": enrollments_data,
         "recentActivity": recent_activity,
+    }), 200
+
+@bp.route("/exchange-rate", methods=["GET"])
+@jwt_required()
+def get_exchange_rate():
+    user = User.query.get(get_jwt_identity())
+    if user.role != "admin":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    rate = ExchangeRate.query.first()
+
+    # FIX: Auto-create default if missing
+    if not rate:
+        rate = ExchangeRate(ngn_to_usd=1500)
+        db.session.add(rate)
+        db.session.commit()
+
+    return jsonify({
+        "ngn_to_usd": rate.ngn_to_usd,
+        "updated_at": rate.updated_at.isoformat()
+    })
+
+@bp.route("/exchange-rate", methods=["POST"])
+@jwt_required()
+def update_exchange_rate():
+    user = User.query.get(get_jwt_identity())
+    if user.role != "admin":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    data = request.get_json(silent=True)
+
+    if not data:
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
+
+    new_rate = data.get("ngn_to_usd")
+
+    if not new_rate:
+        return jsonify({"error": "Missing 'ngn_to_usd'"}), 400
+
+    rate = ExchangeRate.query.first()
+
+    # If rate does not exist, create it
+    if not rate:
+        rate = ExchangeRate(ngn_to_usd=float(new_rate))
+        db.session.add(rate)
+    else:
+        rate.ngn_to_usd = float(new_rate)
+        rate.updated_at = datetime.utcnow()
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Rate updated successfully",
+        "ngn_to_usd": rate.ngn_to_usd
     }), 200
