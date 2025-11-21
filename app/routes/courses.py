@@ -7,6 +7,7 @@ from app.models.course import Section
 from app.models.lesson import Quiz
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.auth import role_required
+from app.helpers.currency import detect_currency, convert_ngn_to_usd
 import json
 from moviepy import VideoFileClip
 import os, uuid, re
@@ -34,7 +35,7 @@ def get_video_metadata(video_path):
         print(f"Error analyzing video: {e}")
         return None, None
     finally:
-        # ✅ safely close without assuming attributes exist
+        # safely close without assuming attributes exist
         try:
             if "clip" in locals():
                 if hasattr(clip, "reader") and hasattr(clip.reader, "close"):
@@ -75,16 +76,23 @@ bp = Blueprint("courses", __name__)
 # List all published courses
 @bp.route("/", methods=["GET"])
 def list_courses():
+    user_currency = detect_currency()
     courses = Course.query.filter_by(is_published=True).all()
     result = []
     for c in courses:
+        if user_currency == "USD":
+            price = convert_ngn_to_usd(c.price)
+        else:
+            price = c.price
+            
         result.append({
             "id": c.id,
             "image": c.image,
             "slug": c.slug,
             "title": c.title,
             "description": c.description,
-            "price": c.price,
+            "price": price,
+            "currency": user_currency,
             "is_published": c.is_published,
             "total_lessons": c.total_lessons,
             "created_at": c.created_at.isoformat()

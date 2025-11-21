@@ -7,24 +7,12 @@ from app.extensions import db
 from app.models import Enrollment, User, Course
 from app.models.coupon import Coupon
 from app.models.user import Payment
+from app.helpers.currency import detect_currency, convert_ngn_to_usd
 
 bp = Blueprint("payments", __name__)
 
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 PAYSTACK_BASE_URL = "https://api.paystack.co"
-
-def get_client_ip():
-    if request.headers.get("X-Forwarded-For"):
-        return request.headers.get("X-Forwarded-For").split(",")[0].strip()
-    return request.remote_addr
-
-def get_country_from_ip(ip):
-    try:
-        response = requests.get(f"https://ipapi.co/{ip}/json/")
-        data = response.json()
-        return data.get("country_name"), data.get("currency")
-    except:
-        return None, None
     
 @bp.route("/initiate", methods=["POST"])
 @jwt_required()
@@ -105,14 +93,21 @@ def initiate_payment():
     }
 
     slug = course.title.lower().replace(" ", "-")
+    currency = detect_currency()
+    final_amount = amount
+
+    if currency == "USD":
+        final_amount = convert_ngn_to_usd(amount)
     payload = {
         "email": email,
-        "amount": int(amount * 100),  # convert to kobo correctly
+        "amount": int(final_amount * 100),  # convert to kobo correctly
+        "currency": currency,
         "callback_url": "http://localhost:5000/payments/verify",
         "metadata": {
             "slug": slug,
             "course_id": course.id,
             "coupon_code": coupon_code if coupon_code else None,
+            "currency_used": currency,
             "discount_amount": discount_amount,
             "redirect_url": f"http://localhost:3000/checkout/{slug}"
         }

@@ -97,3 +97,10 @@ class UserSession(db.Model):
 
 
     user = db.relationship("User", back_populates="sessions")
+
+class ExchangeRate(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    ngn_to_usd = db.Column(db.Float, nullable=False, default=1500.0)  # example default
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    
