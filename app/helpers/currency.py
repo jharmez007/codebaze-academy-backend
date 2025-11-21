@@ -8,11 +8,27 @@ def get_client_ip():
     if request.headers.get("X-Dev-IP"):
         return request.headers["X-Dev-IP"]
 
+# def get_country_from_ip(ip):
+#     try:
+#         response = requests.get(f"https://ipapi.co/{ip}/json/")
+#         data = response.json()
+#         return data.get("country_name"), data.get("currency")
+#     except:
+#         return None, None
+
 def get_country_from_ip(ip):
     try:
-        response = requests.get(f"https://ipapi.co/{ip}/json/")
+        response = requests.get(f"https://ipwho.is/{ip}", timeout=2)
         data = response.json()
-        return data.get("country_name"), data.get("currency")
+
+        if not data.get("success"):
+            return None, None
+
+        country = data.get("country")
+        currency = data.get("currency", {}).get("code")
+
+        return country, currency
+        
     except:
         return None, None
 def detect_currency():
