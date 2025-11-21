@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, request
+import requests
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.user import ExchangeRate
 from app.models import User, Course, Enrollment
@@ -160,14 +161,30 @@ def update_exchange_rate():
         "ngn_to_usd": rate.ngn_to_usd
     }), 200
 
-@bp.route("/debug/currency")
+# @bp.route("/debug/currency")
+# def debug_currency():
+#     ip = get_client_ip()
+#     country, currency = get_country_from_ip(ip)
+#     detected = detect_currency()
+
+#     return {
+#         "client_ip": ip,
+#         "country": country,
+#         "api_currency": currency,
+#         "final_detected_currency": detected
+#     }
 def debug_currency():
     ip = get_client_ip()
+
+    # FULL RESPONSE FOR DEBUGGING
+    api_response = requests.get(f"https://ipwho.is/{ip}").json()
+
     country, currency = get_country_from_ip(ip)
     detected = detect_currency()
 
     return {
         "client_ip": ip,
+        "api_raw": api_response,   # <-- add this
         "country": country,
         "api_currency": currency,
         "final_detected_currency": detected
