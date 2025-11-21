@@ -7,7 +7,7 @@ from app.extensions import db
 from app.models import Enrollment, User, Course
 from app.models.coupon import Coupon
 from app.models.user import Payment
-from app.helpers.currency import detect_currency, convert_ngn_to_usd
+from app.helpers.currency import detect_currency, convert_ngn_to_usd, get_client_ip
 
 bp = Blueprint("payments", __name__)
 
@@ -159,6 +159,9 @@ def initiate_payment():
         "authorization_url": resp_data["data"]["authorization_url"],
         "reference": reference,
         "discount_applied": discount_amount,
+        "detected_currency": currency,
+        "client_ip": get_client_ip(),
+        "final_amount": final_amount
     }), 200
 
 

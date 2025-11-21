@@ -48,14 +48,26 @@ def get_country_from_ip(ip):
         
     except:
         return None, None
+# def detect_currency():
+#     ip = get_client_ip()
+#     country, currency = get_country_from_ip(ip)
+
+#     if country == "Nigeria":
+#         return "NGN"
+#     return "USD"
+
 def detect_currency():
     ip = get_client_ip()
     country, currency = get_country_from_ip(ip)
 
+    # If API lookup fails → treat as Nigeria
+    if not country:
+        return "NGN"
+
     if country == "Nigeria":
         return "NGN"
-    return "USD"
 
+    return "USD"
 # def detect_currency():
 #     # Cloudflare
 #     cf_country = request.headers.get("CF-IPCountry")
