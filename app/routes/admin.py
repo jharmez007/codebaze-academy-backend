@@ -161,7 +161,7 @@ def update_exchange_rate():
         "ngn_to_usd": rate.ngn_to_usd
     }), 200
 
-# @bp.route("/debug/currency")
+@bp.route("/debug/currency")
 # def debug_currency():
 #     ip = get_client_ip()
 #     country, currency = get_country_from_ip(ip)
