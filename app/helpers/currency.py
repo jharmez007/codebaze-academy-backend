@@ -4,9 +4,26 @@ from app.extensions import db
 from app.models.user import ExchangeRate
 
 def get_client_ip():
-    # allow dev override: X-Forwarded-For
+    # 1. Dev override header for local testing
     if request.headers.get("X-Dev-IP"):
         return request.headers["X-Dev-IP"]
+
+    # 2. Cloudflare real client IP
+    if request.headers.get("CF-Connecting-IP"):
+        return request.headers["CF-Connecting-IP"]
+
+    # 3. Standard reverse proxy header
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        # Could be "client, proxy1, proxy2"
+        return xff.split(",")[0].strip()
+
+    # 4. Alternative common IP headers
+    if request.headers.get("X-Real-IP"):
+        return request.headers["X-Real-IP"]
+
+    # 5. Fallback: remote address (local dev)
+    return request.remote_addr
 
 # def get_country_from_ip(ip):
 #     try:
