@@ -7,6 +7,7 @@ from app.models.user import Payment
 from sqlalchemy import func, extract
 from datetime import datetime
 from app.extensions import db
+from app.helpers.currency import get_client_ip, get_country_from_ip, detect_currency    
 
 bp = Blueprint("admin", __name__)
 
@@ -158,3 +159,16 @@ def update_exchange_rate():
         "message": "Rate updated successfully",
         "ngn_to_usd": rate.ngn_to_usd
     }), 200
+
+@bp.route("/debug/currency")
+def debug_currency():
+    ip = get_client_ip()
+    country, currency = get_country_from_ip(ip)
+    detected = detect_currency()
+
+    return {
+        "client_ip": ip,
+        "country": country,
+        "api_currency": currency,
+        "final_detected_currency": detected
+    }
