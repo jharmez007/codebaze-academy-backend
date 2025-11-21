@@ -60,10 +60,17 @@ def detect_currency():
     ip = get_client_ip()
     country, currency = get_country_from_ip(ip)
 
-    # If API lookup fails → treat as Nigeria
+    # First call failed → retry once
     if not country:
-        return "NGN"
+        country, currency = get_country_from_ip(ip)
 
+    # STILL null → determine based on IP pattern
+    if not country:
+        if ip.startswith(("10.", "127.", "192.168.", "172.")):
+            return "NGN"  # local dev machine
+        return "USD"  # failed but foreign IP → assume USD
+
+    # Normal detection
     if country == "Nigeria":
         return "NGN"
 
