@@ -5,6 +5,7 @@ from datetime import datetime
 from app.extensions import db
 from app.models.coupon import Coupon
 from app.models.course import Course
+from app.helpers.currency import detect_currency, convert_ngn_to_usd
 
 bp = Blueprint("coupon", __name__)
 # ---------------- CREATE ----------------
@@ -77,6 +78,9 @@ def validate_coupon():
     course_id = data.get("course_id")
     user_id = get_jwt_identity()
 
+    # Detect user currency (NGN or USD)
+    user_currency = detect_currency()
+
     coupon = Coupon.query.filter_by(code=code, is_active=True).first()
     if not coupon:
         return jsonify({"error": "Invalid or inactive coupon"}), 404
@@ -94,10 +98,21 @@ def validate_coupon():
     course = Course.query.get(course_id)
     if not course:
         return jsonify({"error": "Invalid course"}), 404
+
     if not coupon.applies_to_all and course not in coupon.courses:
         return jsonify({"error": "Coupon not applicable to this course"}), 400
 
+    # -----------------------------
+    # APPLY CURRENCY CONVERSION
+    # -----------------------------
     original_price = course.price
+
+    if user_currency == "USD":
+        original_price = convert_ngn_to_usd(original_price)
+
+    # -----------------------------
+    # APPLY DISCOUNT
+    # -----------------------------
     if coupon.discount_type == "percent":
         discount_amount = (coupon.discount_value / 100) * original_price
     else:
@@ -107,9 +122,10 @@ def validate_coupon():
 
     return jsonify({
         "message": "Coupon applied successfully",
-        "original_price": original_price,
-        "discount": discount_amount,
-        "final_price": final_price,
+        "currency": user_currency,
+        "original_price": round(original_price, 2),
+        "discount": round(discount_amount, 2),
+        "final_price": round(final_price, 2),
         "coupon_type": coupon.type,
         "code": coupon.code
     }), 200
