@@ -7,7 +7,7 @@ from app.models.course import Section
 from app.models.lesson import Quiz
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.auth import role_required
-from app.helpers.currency import detect_currency, convert_ngn_to_usd, get_client_ip, get_country_from_ip
+from app.helpers.currency import detect_currency, convert_ngn_to_usd
 import json
 from moviepy import VideoFileClip
 import os, uuid, re
@@ -77,13 +77,13 @@ bp = Blueprint("courses", __name__)
 @bp.route("/", methods=["GET"])
 def list_courses():
     user_currency = detect_currency()
-    ip = get_client_ip()
-    country, _ = get_country_from_ip(ip)
-
     courses = Course.query.filter_by(is_published=True).all()
     result = []
     for c in courses:
-        price = convert_ngn_to_usd(c.price) if user_currency == "USD" else c.price
+        if user_currency == "USD":
+            price = convert_ngn_to_usd(c.price)
+        else:
+            price = c.price
 
         result.append({
             "id": c.id,
@@ -97,14 +97,7 @@ def list_courses():
             "total_lessons": c.total_lessons,
             "created_at": c.created_at.isoformat()
         })
-
-    return jsonify({
-        "currency": user_currency,
-        "client_ip": ip,
-        "country": country,
-        "courses": result
-    })
-
+    return jsonify(result)
 
 @bp.route("/admin", methods=["GET"])
 def list_courses_all():
