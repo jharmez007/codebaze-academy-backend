@@ -157,6 +157,9 @@ def initiate_payment():
 
     print("SENT CURRENCY:", currency)
     print("PAYSTACK RESPONSE:", resp_data)
+    # print("DETECTED IP:", get_client_ip())
+    # print("DETECTED COUNTRY:", get_country_from_ip(get_client_ip()))
+    # print("DETECTED CURRENCY:", detect_currency())
     return jsonify({
         "message": "Payment initialized successfully",
         "authorization_url": resp_data["data"]["authorization_url"],

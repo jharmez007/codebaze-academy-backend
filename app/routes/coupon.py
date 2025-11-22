@@ -5,69 +5,10 @@ from datetime import datetime
 from app.extensions import db
 from app.models.coupon import Coupon
 from app.models.course import Course
+from app.helpers.currency import detect_currency, convert_ngn_to_usd
 
 bp = Blueprint("coupon", __name__)
-
-# @bp.route("/coupons", methods=["POST"])
-# @jwt_required()
-# @role_required("admin")
-# def create_coupon():
-#     data = request.get_json()
-
-#     code = data.get("code")
-#     coupon_type = data.get("type", "general")
-#     discount_type = data.get("discount_type", "percent")
-#     discount_value = data.get("discount_value")
-#     user_id = data.get("user_id")
-#     max_uses = data.get("max_uses")
-#     valid_until = data.get("valid_until")
-#     commission = data.get("commission")
-#     course_ids = data.get("course_ids", [])  # ✅ list of course IDs
-#     applies_to_all = data.get("applies_to_all", False)  # ✅ flag for all courses
-
-#     if not all([code, discount_type, discount_value]):
-#         return jsonify({"error": "Missing required fields"}), 400
-
-#     if Coupon.query.filter_by(code=code.upper()).first():
-#         return jsonify({"error": "Coupon code already exists"}), 409
-
-#     coupon = Coupon(
-#         code=code.upper(),
-#         type=coupon_type,
-#         discount_type=discount_type,
-#         discount_value=discount_value,
-#         user_id=user_id,
-#         max_uses=max_uses,
-#         valid_until=datetime.fromisoformat(valid_until) if valid_until else None,
-#         commission=commission,
-#         applies_to_all=applies_to_all,  # ✅ store whether it applies to all
-#     )
-
-#     # ✅ If specific courses were provided, attach them
-#     if not applies_to_all and course_ids:
-#         courses = Course.query.filter(Course.id.in_(course_ids)).all()
-#         if not courses:
-#             return jsonify({"error": "No valid courses found for provided IDs"}), 400
-#         coupon.courses = courses  # many-to-many relationship
-#     elif applies_to_all:
-#         coupon.courses = []  # can be left empty if all courses are valid
-
-#     db.session.add(coupon)
-#     db.session.commit()
-
-#     return jsonify({
-#         "message": "Coupon created successfully",
-#         "coupon": {
-#             "id": coupon.id,
-#             "code": coupon.code,
-#             "type": coupon.type,
-#             "discount": f"{coupon.discount_value} ({coupon.discount_type})",
-#             "expires": coupon.valid_until.isoformat() if coupon.valid_until else None,
-#             "applies_to_all": coupon.applies_to_all,
-#             "attached_courses": [c.title for c in coupon.courses] if coupon.courses else "All courses"
-#         }
-#     }), 201
-
+# ---------------- CREATE ----------------
 @bp.route("/coupons", methods=["POST"])
 @jwt_required()
 @role_required("admin")
@@ -137,6 +78,9 @@ def validate_coupon():
     course_id = data.get("course_id")
     user_id = get_jwt_identity()
 
+    # Detect user currency (NGN or USD)
+    user_currency = detect_currency()
+
     coupon = Coupon.query.filter_by(code=code, is_active=True).first()
     if not coupon:
         return jsonify({"error": "Invalid or inactive coupon"}), 404
@@ -154,10 +98,21 @@ def validate_coupon():
     course = Course.query.get(course_id)
     if not course:
         return jsonify({"error": "Invalid course"}), 404
+
     if not coupon.applies_to_all and course not in coupon.courses:
         return jsonify({"error": "Coupon not applicable to this course"}), 400
 
+    # -----------------------------
+    # APPLY CURRENCY CONVERSION
+    # -----------------------------
     original_price = course.price
+
+    if user_currency == "USD":
+        original_price = convert_ngn_to_usd(original_price)
+
+    # -----------------------------
+    # APPLY DISCOUNT
+    # -----------------------------
     if coupon.discount_type == "percent":
         discount_amount = (coupon.discount_value / 100) * original_price
     else:
@@ -167,9 +122,10 @@ def validate_coupon():
 
     return jsonify({
         "message": "Coupon applied successfully",
-        "original_price": original_price,
-        "discount": discount_amount,
-        "final_price": final_price,
+        "currency": user_currency,
+        "original_price": round(original_price, 2),
+        "discount": round(discount_amount, 2),
+        "final_price": round(final_price, 2),
         "coupon_type": coupon.type,
         "code": coupon.code
     }), 200
