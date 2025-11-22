@@ -67,6 +67,7 @@ class Payment(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
     coupon_code = db.Column(db.String(50), nullable=True)
+    currency = db.Column(db.String(5), default="NGN")
 
     user = db.relationship('User', back_populates='payments')
     course = db.relationship('Course', backref='payments')
