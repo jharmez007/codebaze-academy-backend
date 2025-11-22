@@ -154,6 +154,8 @@ def initiate_payment():
 
     db.session.commit()
 
+    print("SENT CURRENCY:", currency)
+    print("PAYSTACK RESPONSE:", resp_data)
     return jsonify({
         "message": "Payment initialized successfully",
         "authorization_url": resp_data["data"]["authorization_url"],
