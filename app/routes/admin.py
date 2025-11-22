@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 import requests
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.models.user import ExchangeRate
+from app.models.user import ExchangeRate, NewsletterSubscriber
 from app.models import User, Course, Enrollment
 from app.models.coupon import Coupon
 from app.models.user import Payment
@@ -189,3 +189,37 @@ def debug_currency():
         "api_currency": currency,
         "final_detected_currency": detected
     }
+
+@bp.route("/newsletter/subscribe", methods=["POST"])
+def subscribe_newsletter():
+    data = request.get_json()
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip().lower()
+
+    # Validation
+    if not name or not email:
+        return jsonify({"error": "Name and email are required"}), 400
+
+    # Check if already subscribed
+    existing = NewsletterSubscriber.query.filter_by(email=email).first()
+    if existing:
+        return jsonify({
+            "message": "Already subscribed",
+            "name": existing.name,
+            "email": existing.email
+        }), 200
+
+    # Save new subscriber
+    subscriber = NewsletterSubscriber(name=name, email=email)
+    db.session.add(subscriber)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Subscription successful",
+        "subscriber": {
+            "id": subscriber.id,
+            "name": subscriber.name,
+            "email": subscriber.email,
+            "created_at": subscriber.created_at.isoformat()
+        }
+    }), 201

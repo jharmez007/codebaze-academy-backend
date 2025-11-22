@@ -69,17 +69,80 @@ def create_coupon():
         }
     }), 201
 
-# ---------------- VALIDATE ----------------
+# # ---------------- VALIDATE ----------------
+# @bp.route("/coupons/validate", methods=["POST"])
+# @jwt_required()
+# def validate_coupon():
+#     data = request.get_json()
+#     code = data.get("code", "").strip().upper()
+#     course_id = data.get("course_id")
+#     user_id = get_jwt_identity()
+
+#     # Detect user currency (NGN or USD)
+#     user_currency = detect_currency()
+
+#     coupon = Coupon.query.filter_by(code=code, is_active=True).first()
+#     if not coupon:
+#         return jsonify({"error": "Invalid or inactive coupon"}), 404
+
+#     now = datetime.utcnow()
+#     if coupon.valid_until and now > coupon.valid_until:
+#         return jsonify({"error": "Coupon expired"}), 400
+
+#     if coupon.type == "user_specific" and coupon.user_id != user_id:
+#         return jsonify({"error": "This coupon is not assigned to you"}), 403
+
+#     if coupon.max_uses and coupon.used_count >= coupon.max_uses:
+#         return jsonify({"error": "Coupon usage limit reached"}), 400
+
+#     course = Course.query.get(course_id)
+#     if not course:
+#         return jsonify({"error": "Invalid course"}), 404
+
+#     if not coupon.applies_to_all and course not in coupon.courses:
+#         return jsonify({"error": "Coupon not applicable to this course"}), 400
+
+#     # -----------------------------
+#     # APPLY CURRENCY CONVERSION
+#     # -----------------------------
+#     original_price = course.price
+
+#     if user_currency == "USD":
+#         original_price = convert_ngn_to_usd(original_price)
+
+#     # -----------------------------
+#     # APPLY DISCOUNT
+#     # -----------------------------
+#     if coupon.discount_type == "percent":
+#         discount_amount = (coupon.discount_value / 100) * original_price
+#     else:
+#         discount_amount = min(coupon.discount_value, original_price)
+
+#     final_price = max(original_price - discount_amount, 0)
+
+#     return jsonify({
+#         "message": "Coupon applied successfully",
+#         "currency": user_currency,
+#         "original_price": round(original_price, 2),
+#         "discount": round(discount_amount, 2),
+#         "final_price": round(final_price, 2),
+#         "coupon_type": coupon.type,
+#         "code": coupon.code
+#     }), 200
+
 @bp.route("/coupons/validate", methods=["POST"])
 @jwt_required()
 def validate_coupon():
-    data = request.get_json()
+    data = request.get_json() or {}
     code = data.get("code", "").strip().upper()
     course_id = data.get("course_id")
     user_id = get_jwt_identity()
 
-    # Detect user currency (NGN or USD)
-    user_currency = detect_currency()
+    if not code or not course_id:
+        return jsonify({"error": "Missing code or course_id"}), 400
+
+    # detect user's preferred currency
+    user_currency = detect_currency()  # "NGN" or "USD"
 
     coupon = Coupon.query.filter_by(code=code, is_active=True).first()
     if not coupon:
@@ -103,34 +166,52 @@ def validate_coupon():
         return jsonify({"error": "Coupon not applicable to this course"}), 400
 
     # -----------------------------
-    # APPLY CURRENCY CONVERSION
+    # 1) Compute discount in NGN (original currency)
     # -----------------------------
-    original_price = course.price
+    original_price_ngn = float(course.price)  # canonical price stored in NGN
+    if coupon.discount_type == "percent":
+        discount_amount_ngn = (coupon.discount_value / 100.0) * original_price_ngn
+    else:  # "amount" (fixed NGN)
+        # ensure we don't exceed original price
+        discount_amount_ngn = min(float(coupon.discount_value), original_price_ngn)
+
+    final_price_ngn = max(original_price_ngn - discount_amount_ngn, 0.0)
+
+    # -----------------------------
+    # 2) Convert to USD if frontend/user wants USD
+    #    Convert both original, discount and final amounts AFTER computing discount
+    # -----------------------------
+    original_price = original_price_ngn
+    discount_amount = discount_amount_ngn
+    final_price = final_price_ngn
 
     if user_currency == "USD":
-        original_price = convert_ngn_to_usd(original_price)
+        # convert each value and round to 2 decimals
+        original_price = convert_ngn_to_usd(original_price_ngn)
+        discount_amount = convert_ngn_to_usd(discount_amount_ngn)
+        final_price = convert_ngn_to_usd(final_price_ngn)
 
-    # -----------------------------
-    # APPLY DISCOUNT
-    # -----------------------------
-    if coupon.discount_type == "percent":
-        discount_amount = (coupon.discount_value / 100) * original_price
-    else:
-        discount_amount = min(coupon.discount_value, original_price)
-
-    final_price = max(original_price - discount_amount, 0)
+    # round for presentation
+    original_price = round(original_price, 2)
+    discount_amount = round(discount_amount, 2)
+    final_price = round(final_price, 2)
 
     return jsonify({
         "message": "Coupon applied successfully",
-        "currency": user_currency,
-        "original_price": round(original_price, 2),
-        "discount": round(discount_amount, 2),
-        "final_price": round(final_price, 2),
+        "requested_currency": user_currency,
+        # canonical values (NGN)
+        "original_price_ngn": round(original_price_ngn, 2),
+        "discount_ngn": round(discount_amount_ngn, 2),
+        "final_price_ngn": round(final_price_ngn, 2),
+        # values in requested currency (NGN or USD)
+        "original_price": original_price,
+        "discount": discount_amount,
+        "final_price": final_price,
         "coupon_type": coupon.type,
+        "discount_type": coupon.discount_type,
         "code": coupon.code
     }), 200
-
-
+# ---------------- LIST ----------------
 @bp.route("/coupons", methods=["GET"])
 @jwt_required()
 @role_required("admin")
