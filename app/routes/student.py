@@ -389,6 +389,7 @@ def get_student_courses():
 def calculate_progress(course, user_id):
     total_lessons = 0
     completed_lessons = 0
+    completed_lesson_ids = []
 
     section_progress_list = []
 
@@ -408,6 +409,7 @@ def calculate_progress(course, user_id):
             if progress:
                 completed_lessons += 1
                 sec_completed += 1
+                completed_lesson_ids.append(lesson.id)
 
         section_progress_list.append({
             "section_id": section.id,
@@ -424,6 +426,7 @@ def calculate_progress(course, user_id):
 
     return {
         "completed_lessons": completed_lessons,
+        "completed_lesson_ids": completed_lesson_ids,
         "total_lessons": total_lessons,
         "overall_percentage": overall_percentage,
         "sections": section_progress_list
@@ -472,7 +475,7 @@ def get_student_full_course(course_id):
         "created_at": course.created_at.isoformat(),
         "image": course.image,
 
-        # Include full progress summary
+        # Include updated progress summary
         "progress": progress_data,
 
         "sections": []
