@@ -329,19 +329,12 @@ def download_invoice(payment_id):
 @bp.route("/my-courses", methods=["GET"])
 @jwt_required()
 def get_student_courses():
-    """
-    Return courses the student has enrolled in, and courses they have paid for
-    but enrollment has not been activated yet.
-    """
     user_id = get_jwt_identity()
     student = User.query.get_or_404(user_id)
 
     if student.role != "student":
         return jsonify({"error": "Only students can access this endpoint"}), 403
 
-    # --------------------------------------------------
-    # Get ALL enrollments for this student
-    # --------------------------------------------------
     enrollments = Enrollment.query.filter_by(user_id=user_id).all()
 
     enrolled_courses = []
@@ -349,9 +342,12 @@ def get_student_courses():
 
     for e in enrollments:
         if not e.course:
-            continue  # avoid issues if course was deleted
+            continue
 
         course = e.course
+
+        # ✅ CALCULATE REAL PROGRESS HERE
+        progress_data = calculate_progress(course, user_id)
 
         data = {
             "course_id": course.id,
@@ -360,22 +356,19 @@ def get_student_courses():
             "image": course.image,
             "total_lessons": course.total_lessons,
             "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
-            "progress": e.progress,
-            "status": e.status
+            "status": e.status,
+
+            # PROGRESS
+            "progress": progress_data["overall_percentage"],
+            "completed_lessons": progress_data["completed_lessons"],
+            "total_lessons": progress_data["total_lessons"]
         }
 
-        # --------------------------------------------------
-        # active → fully enrolled
-        # paid → payment done but enrollment pending
-        # --------------------------------------------------
         if e.status == "active":
             enrolled_courses.append(data)
         elif e.status == "paid":
             paid_not_enrolled.append(data)
 
-    # --------------------------------------------------
-    # Final structured response
-    # --------------------------------------------------
     return jsonify({
         "student_id": user_id,
         "enrolled_courses": enrolled_courses,
