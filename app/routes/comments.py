@@ -11,12 +11,13 @@ bp = Blueprint("comments", __name__)
 @jwt_required()
 def add_comment():
     user_id = get_jwt_identity()
-    data = request.get_json()
+    data = request.get_json() or {}
+
     course_id = data.get("course_id")
     content = data.get("content")
-    parent_id = data.get("parent_id")  # For nested replies
+    parent_id = data.get("parent_id")  # Optional reply
 
-    if not all([course_id, content]):
+    if not course_id or not content:
         return jsonify({"error": "Missing fields"}), 400
 
     comment = Comment(
@@ -26,20 +27,29 @@ def add_comment():
         parent_id=parent_id,
         created_at=datetime.utcnow()
     )
+
     db.session.add(comment)
     db.session.commit()
-    return jsonify({"message": "Comment added", "id": comment.id}), 201
+
+    return jsonify({
+        "message": "Comment added",
+        "id": comment.id
+    }), 201
+
 
 
 # --- List comments for a course ---
 @bp.route("/course/<int:course_id>", methods=["GET"])
 def list_comments(course_id):
-    comments = Comment.query.filter_by(course_id=course_id, parent_id=None)\
-        .order_by(Comment.created_at.desc()).all()
+    comments = Comment.query.filter_by(
+        course_id=course_id,
+        parent_id=None
+    ).order_by(Comment.created_at.desc()).all()
 
     def serialize_comment(c):
         user = User.query.get(c.user_id)
         replies = Comment.query.filter_by(parent_id=c.id).all()
+
         return {
             "id": c.id,
             "author": user.full_name if user else "Unknown",
@@ -47,10 +57,11 @@ def list_comments(course_id):
             "avatar": f"https://i.pravatar.cc/150?u={user.id}" if user else None,
             "text": c.content,
             "timestamp": c.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "reactions": {},  # future extension
+            "reactions": {},
             "reactedByUser": {},
             "replies": [serialize_comment(r) for r in replies],
         }
 
     serialized = [serialize_comment(c) for c in comments]
     return jsonify(serialized), 200
+
