@@ -9,6 +9,7 @@ class Comment(db.Model):
 
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
+    reactions = db.Column(db.JSON, default=dict)
 
     # ✅ ADD THIS
     parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)
