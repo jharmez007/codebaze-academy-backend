@@ -359,7 +359,7 @@ def get_student_courses():
             "status": e.status,
 
             # FRACTION-STYLE PROGRESS
-            "progress": f"{progress_data['completed_lessons']}/{progress_data['total_lessons']}",
+            "progress": f"{progress_data['completed_lessons']}",
             "completed_lessons": progress_data["completed_lessons"],
             "total_lessons": progress_data["total_lessons"]
         }
