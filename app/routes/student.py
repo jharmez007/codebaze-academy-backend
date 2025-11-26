@@ -358,8 +358,8 @@ def get_student_courses():
             "enrolled_at": e.enrolled_at.isoformat() if e.enrolled_at else None,
             "status": e.status,
 
-            # PROGRESS
-            "progress": progress_data["overall_percentage"],
+            # FRACTION-STYLE PROGRESS
+            "progress": f"{progress_data['completed_lessons']}/{progress_data['total_lessons']}",
             "completed_lessons": progress_data["completed_lessons"],
             "total_lessons": progress_data["total_lessons"]
         }
