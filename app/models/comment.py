@@ -26,3 +26,19 @@ class Comment(db.Model):
         backref=db.backref('parent', remote_side=[id]),
         lazy=True
     )
+
+class ReportedComment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+
+    comment_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=False)
+    reported_by = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+
+    reason = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    status = db.Column(db.String(50), default="pending")  
+    # pending | reviewed | dismissed
+
+    # Relationships
+    comment = db.relationship("Comment")
+    reporter = db.relationship("User")

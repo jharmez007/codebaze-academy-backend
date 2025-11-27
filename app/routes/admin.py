@@ -4,6 +4,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.user import ExchangeRate, NewsletterSubscriber
 from app.models import User, Course, Enrollment
 from app.models.coupon import Coupon
+from app.models.comment import ReportedComment
 from app.models.user import Payment
 from sqlalchemy import func, extract
 from datetime import datetime
@@ -223,3 +224,62 @@ def subscribe_newsletter():
             "created_at": subscriber.created_at.isoformat()
         }
     }), 201
+
+@bp.route("/reported-comments", methods=["GET"])
+@jwt_required()
+def list_reported_comments():
+    user_id = get_jwt_identity()
+    admin = User.query.get_or_404(user_id)
+
+    if admin.role != "admin":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    reports = ReportedComment.query.order_by(
+        ReportedComment.created_at.desc()
+    ).all()
+
+    result = []
+
+    for r in reports:
+        result.append({
+            "report_id": r.id,
+            "reason": r.reason,
+            "status": r.status,
+            "reported_at": r.created_at.isoformat(),
+
+            "reported_by": {
+                "id": r.reporter.id,
+                "name": r.reporter.full_name,
+                "email": r.reporter.email
+            },
+
+            "comment": {
+                "id": r.comment.id,
+                "content": r.comment.content,
+                "course_id": r.comment.course_id,
+
+                "author": {
+                    "id": r.comment.user.id,
+                    "name": r.comment.user.full_name,
+                    "email": r.comment.user.email
+                }
+            }
+        })
+
+    return jsonify(result), 200
+
+@bp.route("/reported-comments/<int:report_id>/review", methods=["PUT"])
+@jwt_required()
+def review_report(report_id):
+    user_id = get_jwt_identity()
+    admin = User.query.get_or_404(user_id)
+
+    if admin.role != "admin":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    report = ReportedComment.query.get_or_404(report_id)
+
+    report.status = "reviewed"
+    db.session.commit()
+
+    return jsonify({"message": "Report marked as reviewed"}), 200
