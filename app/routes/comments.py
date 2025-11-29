@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.extensions import db
 from app.models import Comment, User
+from app.models.comment import ReportedComment
+from app.utils.mailer import send_email
 from datetime import datetime
 
 bp = Blueprint("comments", __name__)
@@ -128,3 +130,55 @@ def delete_comment(comment_id):
     return jsonify({"message": "Comment deleted"}), 200
 
 
+@bp.route("/<int:comment_id>/report", methods=["POST"])
+@jwt_required()
+def report_comment(comment_id):
+    user_id = get_jwt_identity()
+    data = request.get_json() or {}
+
+    reason = data.get("reason")
+
+    if not reason:
+        return jsonify({"error": "Reason is required"}), 400
+
+    comment = Comment.query.get_or_404(comment_id)
+
+    already_reported = ReportedComment.query.filter_by(
+        comment_id=comment_id,
+        reported_by=user_id
+    ).first()
+
+    if already_reported:
+        return jsonify({"error": "You already reported this comment"}), 409
+
+    report = ReportedComment(
+        comment_id=comment_id,
+        reported_by=user_id,
+        reason=reason
+    )
+
+    db.session.add(report)
+    db.session.commit()
+
+    # Notify Admin via Email
+    admin_emails = [
+        u.email for u in User.query.filter_by(role="admin").all()
+    ]
+
+    if admin_emails:
+        send_email(
+            recipients=admin_emails,
+            subject="New Comment Reported",
+            body=f"""
+A comment has been reported.
+
+Comment ID: {comment.id}
+Comment Content: {comment.content}
+Reported By: User ID {user_id}
+Reason: {reason}
+
+Please review this in the admin panel.
+"""
+        )
+
+    return jsonify({"message": "Comment reported successfully"}), 201
