@@ -2,7 +2,7 @@ version: '3.9'
 
 services:
   web:
-    build: ./app                # build from the app folder
+    build: .
     container_name: codebaze_app
     ports:
       - "5000:5000"
