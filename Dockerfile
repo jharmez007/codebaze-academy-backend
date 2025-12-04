@@ -1,23 +1,25 @@
-FROM python:3.13-slim
+# Use official Python image
+FROM python:3.13
 
 WORKDIR /app
 
-# Install system dependencies for MySQL + WeasyPrint
-RUN apt-get update && apt-get install -y \
-    default-libmysqlclient-dev \
+# Install system dependencies for MySQL + WeasyPrint on Amazon Linux
+RUN yum update -y && \
+    yum install -y \
     gcc \
-    python3-dev \
-    build-essential \
-    pkg-config \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libgdk-pixbuf2.0-dev \
-    libffi-dev \
+    python3-devel \
+    libffi-devel \
+    mariadb-connector-c-devel \
+    cairo \
+    cairo-devel \
+    pango \
+    pango-devel \
+    gdk-pixbuf2 \
+    gdk-pixbuf2-devel \
     shared-mime-info \
- && apt-get clean \
- && rm -rf /var/lib/apt/lists/*
+    && yum clean all
 
-# Copy requirements first for caching
+# Copy requirements first (for caching)
 COPY requirements.txt .
 
 # Install Python dependencies
