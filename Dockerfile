@@ -1,7 +1,6 @@
 # Use official Python image (Debian-based)
 FROM python:3.13-slim
 
-# Set working directory
 WORKDIR /app
 
 # Install system dependencies for MySQL + WeasyPrint
@@ -16,12 +15,12 @@ RUN apt-get update && apt-get install -y \
     libpango-1.0-0 \
     libpango1.0-dev \
     libgdk-pixbuf-2.0-0 \
-    libgdk-pixbuf2.0-dev \
+    libgdk-pixbuf-xlib-2.0-dev \
     shared-mime-info \
     fonts-dejavu-core \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (for Docker cache efficiency)
+# Copy requirements first (for caching)
 COPY requirements.txt .
 
 # Install Python dependencies
