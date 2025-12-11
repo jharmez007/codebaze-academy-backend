@@ -34,4 +34,4 @@ COPY . .
 EXPOSE 5000
 
 # Run Flask app with Gunicorn
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "run:app", "--access-logfile", "-", "--error-logfile", "-"]
+CMD ["flask", "run", "--host=0.0.0.0"]

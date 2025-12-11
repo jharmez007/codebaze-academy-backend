@@ -514,7 +514,8 @@ def get_student_full_course(course_id):
                         "id": quiz.id,
                         "question": quiz.question,
                         "options": quiz.options,
-                        "correct_answer": quiz.correct_answer
+                        "correct_answer": quiz.correct_answer,
+                        "explanation": quiz.explanation
                     })
 
             section_data["lessons"].append(lesson_data)
