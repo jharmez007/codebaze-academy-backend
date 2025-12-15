@@ -18,6 +18,7 @@ UPLOAD_DOC_FOLDER = os.path.join("static", "uploads", "docs")
 # Make sure the folders exist
 os.makedirs(UPLOAD_VIDEO_FOLDER, exist_ok=True)
 os.makedirs(UPLOAD_DOC_FOLDER, exist_ok=True)
+os.makedirs(UPLOAD_IMAGE_FOLDER, exist_ok=True)
 ALLOWED_VIDEO_EXT = {"mp4", "mov", "avi", "mkv", "mp3"}
 ALLOWED_DOC_EXT = {"pdf", "docx", "pptx"}
 ALLOWED_IMG_EXT = {"png", "jpg", "jpeg", "gif"}
