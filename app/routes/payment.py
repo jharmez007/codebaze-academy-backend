@@ -109,7 +109,7 @@ def initiate_payment():
             "coupon_code": coupon_code if coupon_code else None,
             "currency_used": currency,
             "discount_amount": discount_amount,
-            "redirect_url": f"http://localhost:3000/checkout/{slug}"
+            "redirect_url": f"https://codebazeacademy.com/checkout/{slug}"
         }
     }
 
@@ -203,7 +203,7 @@ def verify_payment():
     metadata = trx_data.get("metadata", {}) or {}
 
     course_id = metadata.get("course_id")
-    redirect_url = metadata.get("redirect_url", "http://localhost:3000")
+    redirect_url = metadata.get("redirect_url", "https://codebazeacademy.com/")
 
     # Lookup payment
     payment = Payment.query.filter_by(reference=reference).first()
