@@ -14,11 +14,8 @@ services:
     image: mysql:8.0
     container_name: codebaze_mysql
     restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: secretrootpassword
-      MYSQL_DATABASE: codebaze
-      MYSQL_USER: codebaze
-      MYSQL_PASSWORD: codebazepass
+    env_file:
+      - .env
     ports:
       - "127.0.0.1:3306:3306"
     volumes:
