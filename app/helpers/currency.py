@@ -4,25 +4,24 @@ from app.extensions import db
 from app.models.user import ExchangeRate
 
 def get_client_ip():
-    # 1. Dev override header for local testing
-    if request.headers.get("X-Dev-IP"):
-        return request.headers["X-Dev-IP"]
+    # # 1. Dev override header for local testing
+    # if request.headers.get("X-Dev-IP"):
+    #     return request.headers["X-Dev-IP"]
 
-    # 2. Cloudflare real client IP
+    # 2. Cloudflare header if using CDN
     if request.headers.get("CF-Connecting-IP"):
         return request.headers["CF-Connecting-IP"]
 
-    # 3. Standard reverse proxy header
+    # 3. NGINX reverse proxy headers
     xff = request.headers.get("X-Forwarded-For")
     if xff:
-        # Could be "client, proxy1, proxy2"
+        # first IP is the original client
         return xff.split(",")[0].strip()
 
-    # 4. Alternative common IP headers
     if request.headers.get("X-Real-IP"):
         return request.headers["X-Real-IP"]
 
-    # 5. Fallback: remote address (local dev)
+    # 4. fallback
     return request.remote_addr
 
 # def get_country_from_ip(ip):
@@ -48,49 +47,19 @@ def get_country_from_ip(ip):
         
     except:
         return None, None
-# def detect_currency():
-#     ip = get_client_ip()
-#     country, currency = get_country_from_ip(ip)
-
-#     if country == "Nigeria":
-#         return "NGN"
-#     return "USD"
-
 def detect_currency():
     ip = get_client_ip()
     country, currency = get_country_from_ip(ip)
 
-    # First call failed → retry once
-    if not country:
-        country, currency = get_country_from_ip(ip)
-
-    # STILL null → determine based on IP pattern
+    # fallback if geo IP fails
     if not country:
         if ip.startswith(("10.", "127.", "192.168.", "172.")):
-            return "NGN"  # local dev machine
-        return "USD"  # failed but foreign IP → assume USD
+            return "NGN"  # local dev
+        return "USD"  # fallback foreign
 
-    # Normal detection
-    if country == "Nigeria":
+    if country.lower() == "nigeria":
         return "NGN"
-
     return "USD"
-# def detect_currency():
-#     # Cloudflare
-#     cf_country = request.headers.get("CF-IPCountry")
-#     if cf_country:
-#         if cf_country == "NG":
-#             return "NGN"
-#         return "USD"
-
-#     # fallback for localhost testing
-#     if request.headers.get("X-Dev-IP"):
-#         fake_ip = request.headers["X-Dev-IP"]
-#         if fake_ip.startswith(("102.", "105.", "154.", "41.", "100.")):
-#             return "NGN"
-#         return "USD"
-
-#     return "USD"
 
 def convert_ngn_to_usd(amount_ngn):
     rate = ExchangeRate.query.first()

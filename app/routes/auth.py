@@ -10,6 +10,7 @@ from app.models.progress import Progress
 from app.models.comment import Comment
 from app.models.coupon import Coupon
 from datetime import datetime, timedelta
+from app.helpers.currency import get_client_ip
 from app.utils.mailer import send_email
 import uuid
 import hashlib
@@ -585,3 +586,7 @@ def change_password():
     db.session.commit()
 
     return jsonify({"message": "Password updated successfully."}), 200
+
+@bp.route("/test-ip")
+def test_ip():
+    return {"ip": get_client_ip()}
