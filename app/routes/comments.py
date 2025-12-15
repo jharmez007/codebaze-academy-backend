@@ -19,6 +19,7 @@ def serialize_comment(c, current_user_id=None):
 
     return {
         "id": c.id,
+        "lesson_id": c.lesson_id,
         "author": user.full_name if user else "Unknown",
         "role": user.role if user else None,
         "avatar": user.profile_photo if user else None,
@@ -37,15 +38,15 @@ def add_comment():
     user_id = get_jwt_identity()
     data = request.get_json() or {}
 
-    course_id = data.get("course_id")
+    lesson_id = data.get("lesson_id")
     content = data.get("content")
     parent_id = data.get("parent_id")
 
-    if not course_id or not content:
-        return jsonify({"error": "Missing fields"}), 400
+    if not lesson_id or not content:
+        return jsonify({"error": "lesson_id and content are required"}), 400
 
     comment = Comment(
-        course_id=course_id,
+        lesson_id=lesson_id,
         user_id=user_id,
         content=content,
         parent_id=parent_id,
@@ -59,13 +60,13 @@ def add_comment():
 
 
 # --- List comments for a course ---
-@bp.route("/course/<int:course_id>", methods=["GET"])
+@bp.route("/course/<int:lesson_id>", methods=["GET"])
 @jwt_required(optional=True)
-def list_comments(course_id):
+def list_comments(lesson_id):
     current_user_id = get_jwt_identity()
 
     comments = Comment.query.filter_by(
-        course_id=course_id,
+        lesson_id=lesson_id,
         parent_id=None
     ).order_by(Comment.created_at.desc()).all()
 
@@ -98,7 +99,7 @@ def react_to_comment(comment_id):
 @bp.route("/<int:comment_id>", methods=["PUT"])
 @jwt_required()
 def edit_comment(comment_id):
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
     data = request.get_json() or {}
 
     comment = Comment.query.get_or_404(comment_id)
@@ -117,7 +118,7 @@ def edit_comment(comment_id):
 @bp.route("/<int:comment_id>", methods=["DELETE"])
 @jwt_required()
 def delete_comment(comment_id):
-    user_id = get_jwt_identity()
+    user_id = int(get_jwt_identity())
 
     comment = Comment.query.get_or_404(comment_id)
 
@@ -167,7 +168,7 @@ def report_comment(comment_id):
 
     if admin_emails:
         send_email(
-            recipients=admin_emails,
+            to=admin_emails,
             subject="New Comment Reported",
             body=f"""
 A comment has been reported.
@@ -182,3 +183,18 @@ Please review this in the admin panel.
         )
 
     return jsonify({"message": "Comment reported successfully"}), 201
+
+@bp.route("/<int:comment_id>/reactions", methods=["GET"])
+@jwt_required(optional=True)
+def get_comment_reactions(comment_id):
+    comment = Comment.query.get_or_404(comment_id)
+
+    return jsonify({
+        "comment_id": comment.id,
+        "reactions": comment.reactions or {
+            "like": 0,
+            "wow": 0,
+            "love": 0,
+            "clap": 0
+        }
+    }), 200

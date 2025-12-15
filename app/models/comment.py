@@ -7,24 +7,37 @@ class Comment(db.Model):
 
     content = db.Column(db.Text, nullable=False)
 
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    lesson_id = db.Column(
+        db.Integer,
+        db.ForeignKey("lesson.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
     reactions = db.Column(db.JSON, default=dict)
 
-    # ✅ ADD THIS
-    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)
+    # replies
+    parent_id = db.Column(
+        db.Integer,
+        db.ForeignKey("comment.id", ondelete="CASCADE"),
+        nullable=True
+    )
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # Relationships
-    user = db.relationship('User', back_populates='comments')
-    course = db.relationship('Course', back_populates='comments')
+    # relationships
+    user = db.relationship("User", back_populates="comments")
+    lesson = db.relationship("Lesson", back_populates="comments")
 
-    # ✅ Self-referencing relationship for replies
     replies = db.relationship(
-        'Comment',
-        backref=db.backref('parent', remote_side=[id]),
-        lazy=True
+        "Comment",
+        cascade="all, delete",
+        backref=db.backref("parent", remote_side=[id])
     )
 
 class ReportedComment(db.Model):

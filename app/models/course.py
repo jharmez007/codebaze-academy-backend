@@ -23,7 +23,7 @@ class Course(db.Model):
 
     enrollments = db.relationship("Enrollment", back_populates="course")
     resources = db.relationship("Resource", back_populates="course")
-    comments = db.relationship("Comment", back_populates="course")
+    # comments = db.relationship("Comment", back_populates="course")
     # coupons = db.relationship("Coupon", back_populates="course", lazy=True)
     coupons = db.relationship("Coupon", secondary="coupon_courses", back_populates="courses")
 
