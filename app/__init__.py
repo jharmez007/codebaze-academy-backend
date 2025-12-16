@@ -17,12 +17,16 @@ def create_app():
     migrate.init_app(app, db)
     jwt.init_app(app)
     
-    # CRITICAL FIX: Force mail initialization properly
-    mail.init_app(app)
+    # CRITICAL FIX: Ensure mail config is loaded before init
+    app.config['MAIL_SERVER'] = app.config.get('MAIL_SERVER', 'smtp.zoho.com')
+    app.config['MAIL_PORT'] = int(app.config.get('MAIL_PORT', 587))
+    app.config['MAIL_USE_TLS'] = app.config.get('MAIL_USE_TLS', True)
+    app.config['MAIL_USE_SSL'] = app.config.get('MAIL_USE_SSL', False)
+    app.config['MAIL_USERNAME'] = app.config.get('MAIL_USERNAME')
+    app.config['MAIL_PASSWORD'] = app.config.get('MAIL_PASSWORD')
+    app.config['MAIL_DEFAULT_SENDER'] = app.config.get('MAIL_DEFAULT_SENDER')
     
-    # Manually set the mail state if it's None (workaround for Flask-Mail bug)
-    if mail.state is None:
-        mail.state = mail.init_mail(app.config, app.debug, app.testing)
+    mail.init_app(app)
     
     # Verify mail is initialized
     with app.app_context():
