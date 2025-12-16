@@ -369,11 +369,11 @@ def forgot_password():
 
     # Determine correct frontend URL based on role
     if user.role == "admin":
-        reset_link = f"http://localhost:3000/admin-reset-password?token={reset_token}&email={email}"
+        reset_link = f"https://codebazeacademy.com/admin-reset-password?token={reset_token}&email={email}"
     else:
-        reset_link = f"http://localhost:3000/reset-password?token={reset_token}&email={email}"
+        reset_link = f"https://codebazeacademy.com/reset-password?token={reset_token}&email={email}"
 
-    # ✅ Send email
+    #  Send email
     subject = "Reset Your Password - CodeBaze Academy"
     text_body = render_template(
         "emails/reset_password.txt",
