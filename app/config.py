@@ -7,19 +7,29 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "default-secret")
     FLASK_ENV = os.getenv("FLASK_ENV", "development")
 
-    # SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "mysql+pymysql://root@localhost/codebase_db")
+    # Database
     SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "jwt-secret")
 
-    # Mail
-    MAIL_SERVER = os.getenv("MAIL_SERVER")
+    # Mail Configuration
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.zoho.com")
     MAIL_PORT = int(os.getenv("MAIL_PORT", 587))
-    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "True").lower() == "true"
-    MAIL_USE_SSL = os.getenv("MAIL_USE_SSL", "False").lower() == "true"
+    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "True").lower() in ("true", "1", "yes")
+    MAIL_USE_SSL = os.getenv("MAIL_USE_SSL", "False").lower() in ("true", "1", "yes")
     MAIL_USERNAME = os.getenv("MAIL_USERNAME")
     MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
-    MAIL_DEFAULT_SENDER = eval(os.getenv("MAIL_DEFAULT_SENDER", "('App', 'no-reply@app.com')"))
+    
+    # FIX: Parse MAIL_DEFAULT_SENDER properly
+    _sender = os.getenv("MAIL_DEFAULT_SENDER", "CodeBaze Academy <no-reply@codebazeacademy.com>")
+    # If it's a tuple string, parse it; otherwise use as-is
+    if _sender.startswith("(") and _sender.endswith(")"):
+        try:
+            MAIL_DEFAULT_SENDER = eval(_sender)
+        except:
+            MAIL_DEFAULT_SENDER = ("CodeBaze Academy", "James@codebazeacademy.com")
+    else:
+        MAIL_DEFAULT_SENDER = ("CodeBaze Academy", "James@codebazeacademy.com")
 
     # Payment Gateways
     PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
