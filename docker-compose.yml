@@ -9,6 +9,8 @@ services:
       - .env                    # optional: environment variables file
     depends_on:
       - db
+    volumes:
+      - ./static/uploads:/app/static/uploads
 
   db:
     image: mysql:8.0
