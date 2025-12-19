@@ -1,0 +1,11 @@
+A comment has been reported.
+
+Comment ID: {{ comment.id }}
+Comment Content:
+{{ comment.content }}
+
+Reported By: User ID {{ reporter_id }}
+Reason:
+{{ reason }}
+
+Please review this in the admin panel.

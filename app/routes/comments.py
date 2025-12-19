@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.extensions import db
 from app.models import Comment, User
@@ -167,20 +167,27 @@ def report_comment(comment_id):
     ]
 
     if admin_emails:
+        text_body = render_template(
+            "emails/comment_reported.txt",
+            comment=comment,
+            reporter_id=user_id,
+            reason=reason
+        )
+
+        html_body = render_template(
+            "emails/comment_reported.html",
+            comment=comment,
+            reporter_id=user_id,
+            reason=reason
+        )
+
         send_email(
             to=admin_emails,
             subject="New Comment Reported",
-            body=f"""
-A comment has been reported.
-
-Comment ID: {comment.id}
-Comment Content: {comment.content}
-Reported By: User ID {user_id}
-Reason: {reason}
-
-Please review this in the admin panel.
-"""
+            body=text_body,
+            html=html_body
         )
+
 
     return jsonify({"message": "Comment reported successfully"}), 201
 

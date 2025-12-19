@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>New Comment Reported</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background-color: #f6f7f9;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            background: #ffffff;
+            padding: 20px;
+            margin: auto;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+        }
+        h2 {
+            color: #c0392b;
+            margin-bottom: 16px;
+        }
+        .label {
+            font-weight: bold;
+            margin-top: 12px;
+        }
+        .content-box {
+            background: #f2f3f5;
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 6px;
+            white-space: pre-wrap;
+        }
+        .footer {
+            margin-top: 24px;
+            font-size: 12px;
+            color: #777;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🚨 Comment Reported</h2>
+
+        <p>A comment has been reported and requires your attention.</p>
+
+        <div class="label">Comment ID:</div>
+        <div class="content-box">{{ comment.id }}</div>
+
+        <div class="label">Comment Content:</div>
+        <div class="content-box">{{ comment.content }}</div>
+
+        <div class="label">Reported By:</div>
+        <div class="content-box">User ID {{ reporter_id }}</div>
+
+        <div class="label">Reason:</div>
+        <div class="content-box">{{ reason }}</div>
+
+        <p style="margin-top: 20px;">
+            Please review this report in the admin panel.
+        </p>
+
+        <div class="footer">
+            This is an automated notification from the system.
+        </div>
+    </div>
+</body>
+</html>
