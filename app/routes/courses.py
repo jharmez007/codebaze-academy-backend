@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_from_directory
 from app.extensions import db
 from werkzeug.utils import secure_filename
 from app.models import Course, Lesson, Enrollment
@@ -831,3 +831,21 @@ def delete_quiz(lesson_id, quiz_id):
     db.session.commit()
 
     return jsonify({"message": "Quiz deleted successfully"}), 200
+
+@bp.route("/<int:lesson_id>/document", methods=["GET"])
+@jwt_required(optional=True)
+def download_lesson_document(lesson_id):
+    lesson = Lesson.query.get_or_404(lesson_id)
+
+    if not lesson.document_url:
+        return jsonify({"error": "No document available"}), 404
+
+    # document_url example: /static/uploads/docs/file.pdf
+    filename = os.path.basename(lesson.document_url)
+    directory = os.path.join("static", "uploads", "docs")
+
+    return send_from_directory(
+        directory=directory,
+        path=filename,
+        as_attachment=True
+    )
