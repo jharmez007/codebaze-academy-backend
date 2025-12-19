@@ -835,7 +835,6 @@ def delete_quiz(lesson_id, quiz_id):
 @bp.route("/lessons/<int:lesson_id>/document", methods=["GET"])
 @jwt_required(optional=True)
 def download_lesson_document(lesson_id):
-    """Download document for a specific lesson"""
     
     lesson = Lesson.query.get(lesson_id)
 
@@ -845,29 +844,15 @@ def download_lesson_document(lesson_id):
     if not lesson.document_url:
         return jsonify({"message": "No document available"}), 200
 
-    # Debug logging
-    print(f"\n{'='*60}")
-    print(f"Lesson ID: {lesson_id}")
-    print(f"Document URL from DB: {lesson.document_url}")
-    print(f"App root path: {current_app.root_path}")
-    print(f"Current working directory: {os.getcwd()}")
     
-    # Extract filename from the stored path
-    # lesson.document_url is like: "/static/uploads/docs/Paystack_Merchant_Service_Agreement_1579943.pdf"
     filename = os.path.basename(lesson.document_url)
-    print(f"Extracted filename: {filename}")
     
     # Build ABSOLUTE path to the directory
     # Option 1: If your Flask app is in /path/to/project/app/ and static is at /path/to/project/static/
     directory = os.path.join(current_app.root_path, '..', 'static', 'uploads', 'docs')
     directory = os.path.abspath(directory)  # Convert to absolute path
     
-    # Option 2: If static is in the same directory as run.py
-    # directory = os.path.join(os.getcwd(), 'static', 'uploads', 'docs')
-    
-    print(f"Looking in directory: {directory}")
-    print(f"Directory exists: {os.path.exists(directory)}")
-    
+   
     full_file_path = os.path.join(directory, filename)
     print(f"Full file path: {full_file_path}")
     print(f"File exists: {os.path.exists(full_file_path)}")
