@@ -80,19 +80,33 @@ def react_to_comment(comment_id):
     user_id = get_jwt_identity()
     data = request.get_json() or {}
 
-    reaction = data.get("reaction")  # "like", "clap", "love", "wow"
+    new_reaction = data.get("reaction")  # "like", "clap", "love", "wow"
+    if not new_reaction:
+        return jsonify({"error": "Reaction type is required"}), 400
 
     comment = Comment.query.get_or_404(comment_id)
 
     if not comment.reactions:
-        comment.reactions = {}
+        comment.reactions = {}  # store reaction counts
+    if not hasattr(comment, "user_reactions"):
+        comment.user_reactions = {}  # track individual user's reaction
 
-    comment.reactions[reaction] = comment.reactions.get(reaction, 0) + 1
+    previous_reaction = comment.user_reactions.get(str(user_id))
+    
+    # If user had a previous reaction, decrement its count
+    if previous_reaction:
+        comment.reactions[previous_reaction] = max(
+            comment.reactions.get(previous_reaction, 1) - 1, 0
+        )
+
+    # Update with new reaction
+    comment.reactions[new_reaction] = comment.reactions.get(new_reaction, 0) + 1
+    comment.user_reactions[str(user_id)] = new_reaction
 
     db.session.commit()
 
     return jsonify({
-        "message": "Reaction added",
+        "message": f"Reaction updated to '{new_reaction}'",
         "reactions": comment.reactions
     }), 200
 
