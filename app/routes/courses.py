@@ -832,31 +832,18 @@ def delete_quiz(lesson_id, quiz_id):
 
     return jsonify({"message": "Quiz deleted successfully"}), 200
 
-@bp.route("/<int:lesson_id>/document", methods=["GET"])
+@bp.route("/lessons/<int:lesson_id>/document", methods=["GET"])
 @jwt_required(optional=True)
 def download_lesson_document(lesson_id):
     lesson = Lesson.query.get(lesson_id)
 
-    # Explicit response if lesson doesn't exist
     if not lesson:
-        return jsonify({
-            "error": "Lesson not found",
-            "lesson_id": lesson_id
-        }), 404
+        return jsonify({"error": "Lesson not found"}), 404
 
-    # Lesson exists but has no document
     if not lesson.document_url:
-        return jsonify({
-            "message": "No document has been uploaded for this lesson yet",
-            "lesson_id": lesson.id,
-            "has_document": False
-        }), 200
+        return jsonify({"message": "No document available"}), 200
 
     filename = os.path.basename(lesson.document_url)
     directory = os.path.join("static", "uploads", "docs")
 
-    return send_from_directory(
-        directory=directory,
-        path=filename,
-        as_attachment=True
-    )
+    return send_from_directory(directory, filename, as_attachment=True)
