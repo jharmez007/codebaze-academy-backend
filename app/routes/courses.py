@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, send_from_directory
+from flask import Blueprint, request, jsonify, send_from_directory, current_app
 from app.extensions import db
 from werkzeug.utils import secure_filename
 from app.models import Course, Lesson, Enrollment
@@ -835,6 +835,8 @@ def delete_quiz(lesson_id, quiz_id):
 @bp.route("/lessons/<int:lesson_id>/document", methods=["GET"])
 @jwt_required(optional=True)
 def download_lesson_document(lesson_id):
+    """Download document for a specific lesson"""
+    
     lesson = Lesson.query.get(lesson_id)
 
     if not lesson:
@@ -843,7 +845,63 @@ def download_lesson_document(lesson_id):
     if not lesson.document_url:
         return jsonify({"message": "No document available"}), 200
 
+    # Debug logging
+    print(f"\n{'='*60}")
+    print(f"Lesson ID: {lesson_id}")
+    print(f"Document URL from DB: {lesson.document_url}")
+    print(f"App root path: {current_app.root_path}")
+    print(f"Current working directory: {os.getcwd()}")
+    
+    # Extract filename from the stored path
+    # lesson.document_url is like: "/static/uploads/docs/Paystack_Merchant_Service_Agreement_1579943.pdf"
     filename = os.path.basename(lesson.document_url)
-    directory = os.path.join("static", "uploads", "docs")
-
-    return send_from_directory(directory, filename, as_attachment=True)
+    print(f"Extracted filename: {filename}")
+    
+    # Build ABSOLUTE path to the directory
+    # Option 1: If your Flask app is in /path/to/project/app/ and static is at /path/to/project/static/
+    directory = os.path.join(current_app.root_path, '..', 'static', 'uploads', 'docs')
+    directory = os.path.abspath(directory)  # Convert to absolute path
+    
+    # Option 2: If static is in the same directory as run.py
+    # directory = os.path.join(os.getcwd(), 'static', 'uploads', 'docs')
+    
+    print(f"Looking in directory: {directory}")
+    print(f"Directory exists: {os.path.exists(directory)}")
+    
+    full_file_path = os.path.join(directory, filename)
+    print(f"Full file path: {full_file_path}")
+    print(f"File exists: {os.path.exists(full_file_path)}")
+    
+    # List files in directory for debugging
+    if os.path.exists(directory):
+        files_in_dir = os.listdir(directory)
+        print(f"Files in directory ({len(files_in_dir)} total):")
+        for f in files_in_dir[:10]:  # Show first 10
+            print(f"  - {f}")
+    
+    print('='*60 + '\n')
+    
+    # Check if file exists
+    if not os.path.exists(full_file_path):
+        return jsonify({
+            "error": "File not found",
+            "filename": filename,
+            "directory": directory,
+            "full_path": full_file_path,
+            "files_available": os.listdir(directory) if os.path.exists(directory) else []
+        }), 404
+    
+    # Send the file
+    try:
+        return send_from_directory(
+            directory, 
+            filename, 
+            as_attachment=True
+        )
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        return jsonify({
+            "error": f"Error sending file: {str(e)}",
+            "filename": filename,
+            "directory": directory
+        }), 500
