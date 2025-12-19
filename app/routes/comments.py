@@ -81,20 +81,18 @@ def react_to_comment(comment_id):
     data = request.get_json() or {}
 
     new_reaction = data.get("reaction")
-    if not new_reaction:
-        return jsonify({"error": "Reaction type is required"}), 400
+    if not new_reaction or not isinstance(new_reaction, str):
+        return jsonify({"error": "Reaction type must be a string"}), 400
 
     comment = Comment.query.get_or_404(comment_id)
 
     previous_reaction = comment.user_reactions.get(user_id)
 
     if previous_reaction:
-        # decrement old reaction
         comment.reactions[previous_reaction] = max(comment.reactions.get(previous_reaction, 1) - 1, 0)
         if comment.reactions[previous_reaction] == 0:
             del comment.reactions[previous_reaction]
 
-    # add new reaction
     comment.reactions[new_reaction] = comment.reactions.get(new_reaction, 0) + 1
     comment.user_reactions[user_id] = new_reaction
 
@@ -104,6 +102,7 @@ def react_to_comment(comment_id):
         "message": f"Reaction updated to '{new_reaction}'",
         "reactions": comment.reactions
     }), 200
+
 
 @bp.route("/<int:comment_id>", methods=["PUT"])
 @jwt_required()
