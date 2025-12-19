@@ -1,36 +1,33 @@
+from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy.ext.mutable import MutableDict
 from app.extensions import db
 from datetime import datetime
-from werkzeug.security import generate_password_hash, check_password_hash
 
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-
     content = db.Column(db.Text, nullable=False)
-
     user_id = db.Column(
         db.Integer,
         db.ForeignKey("user.id", ondelete="CASCADE"),
         nullable=False
     )
-
     lesson_id = db.Column(
         db.Integer,
         db.ForeignKey("lesson.id", ondelete="CASCADE"),
         nullable=False
     )
 
-    reactions = db.Column(db.JSON, default=dict)
+    # <- change here
+    reactions = db.Column(MutableDict.as_mutable(db.JSON), default=dict)
+    user_reactions = db.Column(MutableDict.as_mutable(db.JSON), default=dict)  # track per-user reactions
 
-    # replies
     parent_id = db.Column(
         db.Integer,
         db.ForeignKey("comment.id", ondelete="CASCADE"),
         nullable=True
     )
-
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # relationships
     user = db.relationship("User", back_populates="comments")
     lesson = db.relationship("Lesson", back_populates="comments")
 
@@ -39,6 +36,7 @@ class Comment(db.Model):
         cascade="all, delete",
         backref=db.backref("parent", remote_side=[id])
     )
+
 
 class ReportedComment(db.Model):
     id = db.Column(db.Integer, primary_key=True)

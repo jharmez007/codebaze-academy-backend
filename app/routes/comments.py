@@ -77,7 +77,7 @@ def list_comments(lesson_id):
 @bp.route("/<int:comment_id>/react", methods=["POST"])
 @jwt_required()
 def react_to_comment(comment_id):
-    user_id = str(get_jwt_identity())  # store as string for JSON key
+    user_id = str(get_jwt_identity())
     data = request.get_json() or {}
 
     new_reaction = data.get("reaction")
@@ -86,26 +86,17 @@ def react_to_comment(comment_id):
 
     comment = Comment.query.get_or_404(comment_id)
 
-    # Initialize if empty
-    reactions = comment.reactions or {}
-    user_reactions = getattr(comment, "user_reactions", {}) or {}
+    previous_reaction = comment.user_reactions.get(user_id)
 
-    previous_reaction = user_reactions.get(user_id)
-
-    # Decrement old reaction count if it exists
     if previous_reaction:
-        reactions[previous_reaction] = max(reactions.get(previous_reaction, 1) - 1, 0)
-        # Remove key if count reaches 0
-        if reactions[previous_reaction] == 0:
-            del reactions[previous_reaction]
+        # decrement old reaction
+        comment.reactions[previous_reaction] = max(comment.reactions.get(previous_reaction, 1) - 1, 0)
+        if comment.reactions[previous_reaction] == 0:
+            del comment.reactions[previous_reaction]
 
-    # Add new reaction
-    reactions[new_reaction] = reactions.get(new_reaction, 0) + 1
-    user_reactions[user_id] = new_reaction
-
-    # Re-assign to trigger SQLAlchemy update
-    comment.reactions = reactions
-    comment.user_reactions = user_reactions
+    # add new reaction
+    comment.reactions[new_reaction] = comment.reactions.get(new_reaction, 0) + 1
+    comment.user_reactions[user_id] = new_reaction
 
     db.session.commit()
 
