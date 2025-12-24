@@ -1,70 +1,169 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="UTF-8">
-    <title>New Comment Reported</title>
-    <style>
-        body {
-            font-family: Arial, Helvetica, sans-serif;
-            background-color: #f6f7f9;
-            padding: 20px;
-        }
-        .container {
-            max-width: 600px;
-            background: #ffffff;
-            padding: 20px;
-            margin: auto;
-            border-radius: 6px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
-        }
-        h2 {
-            color: #c0392b;
-            margin-bottom: 16px;
-        }
-        .label {
-            font-weight: bold;
-            margin-top: 12px;
-        }
-        .content-box {
-            background: #f2f3f5;
-            padding: 12px;
-            border-radius: 4px;
-            margin-top: 6px;
-            white-space: pre-wrap;
-        }
-        .footer {
-            margin-top: 24px;
-            font-size: 12px;
-            color: #777;
-            text-align: center;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h2>🚨 Comment Reported</h2>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Comment Reported</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
 
-        <p>A comment has been reported and requires your attention.</p>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      font-family: 'Poppins', Arial, sans-serif;
+      background-color: #f5f5f5;
+      color: #333333;
+    "
+  >
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      <tr>
+        <td align="center" style="padding: 20px">
+          <!-- Container -->
+          <table
+            role="presentation"
+            width="100%"
+            cellspacing="0"
+            cellpadding="0"
+            style="
+              max-width: 600px;
+              background-color: #ffffff;
+              border-radius: 8px;
+              padding: 20px;
+              border: 1px solid #eaeaea;
+            "
+          >
+            <tr>
+              <td style="text-align: left">
+                <h2
+                  style="
+                    margin: 0 0 20px 0;
+                    color: #c0392b;
+                    font-size: 24px;
+                    font-weight: 600;
+                  "
+                >
+                  🚨 Comment Reported
+                </h2>
 
-        <div class="label">Comment ID:</div>
-        <div class="content-box">{{ comment.id }}</div>
+                <p style="margin: 0 0 15px 0; line-height: 1.6">
+                  A comment has been reported and requires your attention.
+                </p>
 
-        <div class="label">Comment Content:</div>
-        <div class="content-box">{{ comment.content }}</div>
+                <!-- Comment ID -->
+                <p
+                  style="
+                    margin: 20px 0 6px 0;
+                    font-weight: 600;
+                    font-size: 14px;
+                  "
+                >
+                  Comment ID
+                </p>
+                <div
+                  style="
+                    background-color: #f0f0f0;
+                    padding: 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    border: 1px solid #dddddd;
+                  "
+                >
+                  {{ comment.id }}
+                </div>
 
-        <div class="label">Reported By:</div>
-        <div class="content-box">User ID {{ reporter_id }}</div>
+                <!-- Comment Content -->
+                <p
+                  style="
+                    margin: 20px 0 6px 0;
+                    font-weight: 600;
+                    font-size: 14px;
+                  "
+                >
+                  Comment Content
+                </p>
+                <div
+                  style="
+                    background-color: #f0f0f0;
+                    padding: 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    border: 1px solid #dddddd;
+                    white-space: pre-wrap;
+                  "
+                >
+                  {{ comment.content }}
+                </div>
 
-        <div class="label">Reason:</div>
-        <div class="content-box">{{ reason }}</div>
+                <!-- Reporter -->
+                <p
+                  style="
+                    margin: 20px 0 6px 0;
+                    font-weight: 600;
+                    font-size: 14px;
+                  "
+                >
+                  Reported By
+                </p>
+                <div
+                  style="
+                    background-color: #f0f0f0;
+                    padding: 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    border: 1px solid #dddddd;
+                  "
+                >
+                  User ID {{ reporter_id }}
+                </div>
 
-        <p style="margin-top: 20px;">
-            Please review this report in the admin panel.
-        </p>
+                <!-- Reason -->
+                <p
+                  style="
+                    margin: 20px 0 6px 0;
+                    font-weight: 600;
+                    font-size: 14px;
+                  "
+                >
+                  Reason
+                </p>
+                <div
+                  style="
+                    background-color: #f0f0f0;
+                    padding: 12px;
+                    border-radius: 6px;
+                    font-size: 14px;
+                    border: 1px solid #dddddd;
+                  "
+                >
+                  {{ reason }}
+                </div>
 
-        <div class="footer">
-            This is an automated notification from the system.
-        </div>
-    </div>
-</body>
+                <p style="margin: 25px 0 0 0; line-height: 1.6">
+                  Please review this report in the admin panel and take the
+                  necessary action.
+                </p>
+
+                <p
+                  style="
+                    margin: 30px 0 0 0;
+                    font-size: 12px;
+                    color: #777777;
+                    line-height: 1.5;
+                    text-align: center;
+                  "
+                >
+                  This is an automated notification from the system.
+                </p>
+              </td>
+            </tr>
+          </table>
+          <!-- End Container -->
+        </td>
+      </tr>
+    </table>
+  </body>
 </html>
