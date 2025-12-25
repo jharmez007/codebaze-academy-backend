@@ -16,9 +16,6 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
-
-    #  IMPORTANT: import models BEFORE migrate
-    from app import models  # noqa: F401
     
     # CRITICAL FIX: Ensure mail config is loaded before init
     app.config['MAIL_SERVER'] = app.config.get('MAIL_SERVER', 'smtp.zoho.com')
