@@ -143,8 +143,17 @@ def login():
 
     user = User.query.filter_by(email=email).first()
 
-    if not user or not user.check_password(password):
+    if not user:
         return jsonify({"error": "Invalid credentials"}), 401
+    
+    if not user.password_hash:
+        return jsonify({
+            "error": "Password not set",
+            "code": "PASSWORD_NOT_SET"
+        }), 401
+    
+    if not user.check_password(password):
+        return jsonify({"error": "Invalid password"}), 401
 
     if not user.is_active:
         return jsonify({"error": "Account suspended"}), 403

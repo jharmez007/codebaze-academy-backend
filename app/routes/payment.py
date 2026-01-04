@@ -102,7 +102,7 @@ def initiate_payment():
         "email": email,
         "amount": int(final_amount * 100),  # convert to kobo correctly
         "currency": currency,
-        "callback_url": "https://codebazeacademy.com/api/payments/verify",
+        "callback_url": "https://cba.jumpingcrab.com/payments/verify",
         "metadata": {
             "slug": slug,
             "course_id": course.id,
