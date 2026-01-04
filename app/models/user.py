@@ -7,7 +7,7 @@ class User(db.Model):
     full_name = db.Column(db.String(120), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=True)
-    role = db.Column(db.Enum('student', 'admin'), nullable=False, default='student')
+    role = db.Column(db.Enum('student', 'admin', name='user_role_enum'), nullable=False, default='student')
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -63,9 +63,9 @@ class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     amount = db.Column(db.Float, nullable=False)
-    provider = db.Column(db.Enum('paystack', 'flutterwave', 'stripe'), nullable=False)
+    provider = db.Column(db.Enum('paystack', 'flutterwave', 'stripe', name='payment_enum'), nullable=False)
     reference = db.Column(db.String(100), unique=True, nullable=False)
-    status = db.Column(db.Enum('pending', 'successful', 'failed'), nullable=False, default='pending')
+    status = db.Column(db.Enum('pending', 'successful', 'failed', name='status_enum'), nullable=False, default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     course_id = db.Column(db.Integer, db.ForeignKey('course.id'), nullable=False)
     coupon_code = db.Column(db.String(50), nullable=True)
@@ -82,7 +82,7 @@ class PendingUser(db.Model):
     full_name = db.Column(db.String(120), default="Guest User")
     one_time_token = db.Column(db.String(120), nullable=False)  # hashed
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    role = db.Column(db.Enum('student', 'admin'), nullable=False, default='student')
+    role = db.Column(db.Enum('student', 'admin', name='pending_user_role_enum'), nullable=False, default='student')
     password_hash = db.Column(db.String(255), nullable=True)
 
     def __repr__(self):
