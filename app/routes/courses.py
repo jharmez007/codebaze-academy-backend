@@ -11,14 +11,22 @@ from app.helpers.currency import detect_currency, convert_ngn_to_usd
 import json
 from moviepy import VideoFileClip
 import os, uuid, re
+import tempfile
 
-UPLOAD_VIDEO_FOLDER = os.path.join("static", "uploads", "videos")
+# Import S3 helper functions
+from app.utils.s3_helper import (
+    upload_to_s3, 
+    generate_presigned_url, 
+    delete_from_s3,
+    get_s3_file_size,
+    s3_file_exists
+)
+
+# Keep local folders for temporary processing only
+TEMP_VIDEO_FOLDER = tempfile.gettempdir()
 UPLOAD_IMAGE_FOLDER = os.path.join("static", "uploads", "images")
-UPLOAD_DOC_FOLDER = os.path.join("static", "uploads", "docs")
-# Make sure the folders exist
-os.makedirs(UPLOAD_VIDEO_FOLDER, exist_ok=True)
-os.makedirs(UPLOAD_DOC_FOLDER, exist_ok=True)
 os.makedirs(UPLOAD_IMAGE_FOLDER, exist_ok=True)
+
 ALLOWED_VIDEO_EXT = {"mp4", "mov", "avi", "mkv", "mp3"}
 ALLOWED_DOC_EXT = {"pdf", "docx", "pptx"}
 ALLOWED_IMG_EXT = {"png", "jpg", "jpeg", "gif"}
@@ -27,16 +35,15 @@ def allowed_file(filename, allowed_ext):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed_ext
 
 def get_video_metadata(video_path):
+    """Get video duration from a local file"""
     try:
-        clip = VideoFileClip(video_path, audio=False)  # ✅ disable audio reading unless needed
+        clip = VideoFileClip(video_path, audio=False)
         duration = round(clip.duration, 2) if clip.duration else None
-        size = os.path.getsize(video_path)
-        return duration, size
+        return duration
     except Exception as e:
         print(f"Error analyzing video: {e}")
-        return None, None
+        return None
     finally:
-        # safely close without assuming attributes exist
         try:
             if "clip" in locals():
                 if hasattr(clip, "reader") and hasattr(clip.reader, "close"):
@@ -153,17 +160,13 @@ def get_course(course_id):
         if payment:
             is_paid = True
 
-    # -----------------------------------
     # Currency conversion
-    # -----------------------------------
     if user_currency == "USD":
         price = convert_ngn_to_usd(course.price)
     else:
         price = course.price
 
-    # -----------------------------------
     # Build response
-    # -----------------------------------
     response = {
         "id": course.id,
         "title": course.title,
@@ -245,154 +248,105 @@ def get_full_course(course_id):
                 "reference_link": lesson.reference_link,
                 "video_url": lesson.video_url,
                 "document_url": lesson.document_url,
-                "duration": lesson.duration,
-                "size": lesson.size,
+                "duration": format_duration(lesson.duration),
+                "size": format_size(lesson.size),
                 "created_at": lesson.created_at.isoformat(),
                 "quizzes": []
             }
 
-            # include quizzes per lesson
-            if hasattr(lesson, "quizzes"):
+            # Add quizzes if they exist
+            if hasattr(lesson, 'quizzes') and lesson.quizzes:
                 for quiz in lesson.quizzes:
                     lesson_data["quizzes"].append({
                         "id": quiz.id,
                         "question": quiz.question,
                         "options": quiz.options,
-                        "correct_answer": quiz.correct_answer
+                        "correct_answer": quiz.correct_answer,
+                        "quiz_type": quiz.quiz_type,
+                        "explanation": quiz.explanation
                     })
 
             section_data["lessons"].append(lesson_data)
 
         course_data["sections"].append(section_data)
 
-    return jsonify(course_data), 200
-
+    return jsonify(course_data)
 
 @bp.route("/", methods=["POST"])
 @jwt_required()
 @role_required("admin")
 def create_course():
-    data = request.form.get("data")
-    if not data:
-        return jsonify({"error": "Missing course data"}), 400
-    
-    try:
-        data = json.loads(data)
-    except:
-        return jsonify({"error": "Invalid JSON format"}), 400
+    data = request.get_json()
+    if not data or not data.get("title"):
+        return jsonify({"error": "Title is required"}), 400
 
     title = data.get("title")
-    description = data.get("description")
-    long_description = data.get("long_description")
-    price = data.get("price")
-    sections_data = data.get("sections", [])
+    slug = slugify(title)
+    description = data.get("description", "")
+    long_description = data.get("long_description", "")
+    price = data.get("price", 0)
+    is_published = data.get("is_published", False)
 
-    if not all([title, description, price]):
-        return jsonify({"error": "Missing fields"}), 400
+    new_course = Course(
+        title=title,
+        slug=slug,
+        description=description,
+        long_description=long_description,
+        price=price,
+        is_published=is_published
+    )
+    db.session.add(new_course)
+    db.session.commit()
 
-    # Handle course image
+    return jsonify({
+        "message": "Course created successfully",
+        "course": {
+            "id": new_course.id,
+            "title": new_course.title,
+            "slug": new_course.slug,
+            "description": new_course.description,
+            "price": new_course.price,
+            "is_published": new_course.is_published
+        }
+    }), 201
+
+@bp.route("/<int:course_id>", methods=["PUT"])
+@jwt_required()
+@role_required("admin")
+def update_course(course_id):
+    course = Course.query.get_or_404(course_id)
+    data = request.form.to_dict()
+
+    course.title = data.get("title", course.title)
+    course.description = data.get("description", course.description)
+    course.long_description = data.get("long_description", course.long_description)
+    course.price = data.get("price", course.price)
+    course.is_published = data.get("is_published", course.is_published)
+
+    # Handle image upload (images still stored locally or can be moved to S3)
     image_file = request.files.get("image")
-    image_path = None
     if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
         filename = secure_filename(image_file.filename)
         image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
         image_file.save(image_path)
+        course.image = f"/static/uploads/images/{filename}"
+        
+        # Alternative: Upload to S3
+        # result = upload_to_s3(image_file, folder='images')
+        # if result['success']:
+        #     course.image = result['file_url']
 
-    # Create course
-    course = Course(
-        title=title,
-        description=description,
-        long_description=long_description,
-        price=price,
-        slug=slugify(title),
-        image=image_path,
-        is_published=False
-    )
-
-    # Build sections & lessons
-    for i, sub in enumerate(sections_data):
-        section = Section(
-            name=sub["name"],
-            slug=slugify(sub["name"]),
-            description=sub.get("description"),
-            course=course
-        )
-
-        for j, lesson_data in enumerate(sub.get("lessons", [])):
-            video_file = request.files.get(f"sub_{i}_lesson_{j}_video")
-            doc_file = request.files.get(f"sub_{i}_lesson_{j}_doc")
-
-            video_path, doc_path, duration, size = None, None, None, None
-
-            if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
-                filename = secure_filename(video_file.filename)
-                video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
-                video_file.save(video_path)
-                duration, size = get_video_metadata(video_path)
-
-            if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
-                filename = secure_filename(doc_file.filename)
-                doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
-                doc_file.save(doc_path)
-
-            lesson = Lesson(
-                title=lesson_data["title"],
-                slug=slugify(lesson_data["title"]),
-                notes=lesson_data.get("notes"),
-                reference_link=lesson_data.get("references"),
-                video_url=video_path,
-                document_url=doc_path,
-                duration=duration,
-                size=size,
-                section=section 
-            )
-            section.lessons.append(lesson)
-
-        course.sections.append(section)
-
-    db.session.add(course)
     db.session.commit()
 
     return jsonify({
-        "message": "Course created",
-        "id": course.id,
-        "slug": course.slug,
-        "title": course.title,
-        "image": course.image,
-        "is_published": course.is_published,
-        "sections": [
-            {
-                "id": sub.id,
-                "slug": sub.slug,
-                "name": sub.name,
-                "lessons": [
-                    {
-                        "id": lesson.id,
-                        "slug": lesson.slug,
-                        "title": lesson.title,
-                        "duration": lesson.duration,
-                        "size": lesson.size
-                    }
-                    for lesson in sub.lessons
-                ]
-            } for sub in course.sections
-        ]
-    }), 201
-
-@bp.route("/<int:course_id>/publish", methods=["PATCH"])
-@jwt_required()
-@role_required("admin")
-def toggle_publish(course_id):
-    course = Course.query.get_or_404(course_id)
-
-    # Toggle publish state
-    course.is_published = not course.is_published
-    db.session.commit()
-
-    return jsonify({
-        "message": "Course status updated",
-        "id": course.id,
-        "is_published": course.is_published
+        "message": "Course updated successfully",
+        "course": {
+            "id": course.id,
+            "title": course.title,
+            "description": course.description,
+            "price": course.price,
+            "is_published": course.is_published
+        }
     }), 200
 
 @bp.route("/<int:course_id>", methods=["DELETE"])
@@ -400,266 +354,250 @@ def toggle_publish(course_id):
 @role_required("admin")
 def delete_course(course_id):
     course = Course.query.get_or_404(course_id)
+    
+    # Delete all associated videos from S3
+    for section in course.sections:
+        for lesson in section.lessons:
+            if lesson.s3_video_key:
+                delete_from_s3(lesson.s3_video_key)
+            if lesson.s3_document_key:
+                delete_from_s3(lesson.s3_document_key)
+    
     db.session.delete(course)
     db.session.commit()
 
+    return jsonify({"message": "Course deleted successfully"}), 200
+
+@bp.route("/<int:course_id>/sections", methods=["POST"])
+@jwt_required()
+@role_required("admin")
+def create_section(course_id):
+    course = Course.query.get_or_404(course_id)
+    data = request.get_json()
+
+    if not data or not data.get("name"):
+        return jsonify({"error": "Section name is required"}), 400
+
+    new_section = Section(
+        name=data.get("name"),
+        slug=slugify(data.get("name")),
+        description=data.get("description", ""),
+        course=course
+    )
+    db.session.add(new_section)
+    db.session.commit()
+
     return jsonify({
-        "message": "Course deleted successfully",
-        "id": course_id
+        "message": "Section created successfully",
+        "section": {
+            "id": new_section.id,
+            "name": new_section.name,
+            "slug": new_section.slug,
+            "description": new_section.description
+        }
+    }), 201
+
+@bp.route("/<int:course_id>/sections/<int:section_id>", methods=["PUT"])
+@jwt_required()
+@role_required("admin")
+def update_section(course_id, section_id):
+    section = Section.query.get_or_404(section_id)
+
+    if section.course_id != course_id:
+        return jsonify({"error": "Section does not belong to this course"}), 400
+
+    data = request.get_json()
+    section.name = data.get("name", section.name)
+    section.description = data.get("description", section.description)
+    section.slug = slugify(section.name)
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Section updated successfully",
+        "section": {
+            "id": section.id,
+            "name": section.name,
+            "slug": section.slug,
+            "description": section.description
+        }
     }), 200
 
-@bp.route("/<int:course_id>/add-lesson", methods=["POST"])
-@jwt_required()
-@role_required("admin")
-def add_lesson(course_id):
-    data = request.form.get("data")
-    if not data:
-        return jsonify({"error": "Missing lesson data"}), 400
-
-    try:
-        data = json.loads(data)
-    except:
-        return jsonify({"error": "Invalid JSON format"}), 400
-
-    course = Course.query.get(course_id)
-    if not course:
-        return jsonify({"error": "Course not found"}), 404
-
-    subcategory_id = data.get("subcategory_id")
-    sections = sections.query.get(subcategory_id)
-    if not sections or sections.course_id != course_id:
-        return jsonify({"error": "Invalid sections"}), 400
-
-    # Handle file uploads
-    video_file = request.files.get("video")
-    doc_file = request.files.get("document")
-
-    video_path, doc_path = None, None
-
-    if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
-        filename = secure_filename(video_file.filename)
-        video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
-        video_file.save(video_path)
-
-        duration, size = get_video_metadata(video_path)
-
-    if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
-        filename = secure_filename(doc_file.filename)
-        doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
-        doc_file.save(doc_path)
-
-    lesson = Lesson(
-        title=data["title"],
-        notes=data.get("notes"),
-        reference_link=data.get("references"),
-        video_url=video_path,
-        document_url=doc_path,
-        duration=duration,
-        size=size,
-        course=course,
-        sections=sections
-    )
-
-    db.session.add(lesson)
-    db.session.commit()
-
-    return jsonify({"message": "Lesson added", "lesson_id": lesson.id}), 201
-
-@bp.route("/<int:course_id>", methods=["PUT"])
-@jwt_required()
-@role_required("admin")
-def update_course(course_id):
-    course = Course.query.get_or_404(course_id)
-
-    raw_data = request.form.get("data")
-    if not raw_data:
-        return jsonify({"error": "Missing course data"}), 400
-
-    try:
-        data = json.loads(raw_data)
-    except:
-        return jsonify({"error": "Invalid JSON format"}), 400
-
-    # ✅ Update base fields
-    new_title = data.get("title", course.title)
-    course.title = new_title
-    course.slug = slugify(new_title)  # ✅ Always update slug to match title/topic
-    course.description = data.get("description", course.description)
-    course.price = data.get("price", course.price)
-    course.long_description = data.get("long_description", course.long_description)
-
-    # ✅ Handle new course image if uploaded
-    image_file = request.files.get("image")
-    if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
-        filename = secure_filename(image_file.filename)
-        image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
-        image_file.save(image_path)
-        course.image = image_path
-
-    # ✅ Handle sections & lessons
-    sections_data = data.get("sections", [])
-    for i, sub in enumerate(sections_data):
-        section_id = sub.get("id")
-        if section_id:
-            section = Section.query.filter_by(id=section_id, course_id=course.id).first()
-            if section:
-                section.name = sub.get("name", section.name)
-                section.slug = slugify(section.name)  # ✅ keep section slug updated
-                section.description = sub.get("description", section.description)
-            else:
-                continue
-        else:
-            section = Section(
-                name=sub["name"],
-                slug=slugify(sub["name"]),
-                description=sub.get("description", ""),
-                course=course
-            )
-            db.session.add(section)
-
-        # ✅ Handle lessons
-        for j, lesson_data in enumerate(sub.get("lessons", [])):
-            lesson_id = lesson_data.get("id")
-            if lesson_id:
-                lesson = Lesson.query.filter_by(id=lesson_id, section_id=section.id).first()
-                if lesson:
-                    lesson.title = lesson_data.get("title", lesson.title)
-                    lesson.slug = slugify(lesson.title)  # ✅ keep lesson slug updated
-                    lesson.notes = lesson_data.get("notes", lesson.notes)
-                    lesson.reference_link = lesson_data.get("reference_link", lesson.reference_link)
-                else:
-                    continue
-            else:
-                video_file = request.files.get(f"sub_{i}_lesson_{j}_video")
-                doc_file = request.files.get(f"sub_{i}_lesson_{j}_doc")
-
-                video_path, doc_path, duration, size = None, None, None, None
-
-                if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
-                    filename = secure_filename(video_file.filename)
-                    video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
-                    video_file.save(video_path)
-                    duration, size = get_video_metadata(video_path)
-
-                if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
-                    filename = secure_filename(doc_file.filename)
-                    doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
-                    doc_file.save(doc_path)
-
-                lesson = Lesson(
-                    title=lesson_data["title"],
-                    slug=slugify(lesson_data["title"]),
-                    notes=lesson_data.get("notes"),
-                    reference_link=lesson_data.get("reference_link"),
-                    video_url=video_path,
-                    document_url=doc_path,
-                    duration=duration,
-                    size=size,
-                    section=section
-                )
-                db.session.add(lesson)
-
-    db.session.commit()
-
-    return jsonify({"message": "✅ Course and related data updated successfully"}), 200
-
-
-# Delete a Section and all its Lessons
 @bp.route("/<int:course_id>/sections/<int:section_id>", methods=["DELETE"])
 @jwt_required()
 @role_required("admin")
 def delete_section(course_id, section_id):
-    course = Course.query.get_or_404(course_id)
-    section = Section.query.filter_by(id=section_id, course_id=course.id).first()
+    section = Section.query.get_or_404(section_id)
 
-    if not section:
-        return jsonify({"error": "Section not found"}), 404
+    if section.course_id != course_id:
+        return jsonify({"error": "Section does not belong to this course"}), 400
+    
+    # Delete all videos from S3 before deleting section
+    for lesson in section.lessons:
+        if lesson.s3_video_key:
+            delete_from_s3(lesson.s3_video_key)
+        if lesson.s3_document_key:
+            delete_from_s3(lesson.s3_document_key)
 
-    # Deleting section will also delete lessons if cascade is set in the model
     db.session.delete(section)
     db.session.commit()
 
-    return jsonify({
-        "message": "Section deleted successfully",
-        "section_id": section_id,
-        "course_id": course_id
-    }), 200
+    return jsonify({"message": "Section deleted successfully"}), 200
 
-
-# Delete a single Lesson
-@bp.route("/<int:course_id>/sections/<int:section_id>/lessons/<int:lesson_id>", methods=["DELETE"])
+@bp.route("/<int:course_id>/sections/<int:section_id>/lessons", methods=["POST"])
 @jwt_required()
 @role_required("admin")
-def delete_lesson(course_id, section_id, lesson_id):
-    course = Course.query.get_or_404(course_id)
-    section = Section.query.filter_by(id=section_id, course_id=course.id).first()
-    if not section:
-        return jsonify({"error": "Section not found"}), 404
+def create_lesson(course_id, section_id):
+    """
+    Create a new lesson with S3 video upload support
+    """
+    section = Section.query.get_or_404(section_id)
 
-    lesson = Lesson.query.filter_by(id=lesson_id, section_id=section.id).first()
-    if not lesson:
-        return jsonify({"error": "Lesson not found"}), 404
+    if section.course_id != course_id:
+        return jsonify({"error": "Section does not belong to this course"}), 400
 
-    db.session.delete(lesson)
+    data = request.form.to_dict()
+    title = data.get("title")
+
+    if not title:
+        return jsonify({"error": "Lesson title is required"}), 400
+
+    # Create lesson
+    new_lesson = Lesson(
+        title=title,
+        slug=slugify(title),
+        notes=data.get("notes", ""),
+        reference_link=data.get("reference_link", ""),
+        section=section
+    )
+
+    # Handle video upload to S3
+    video_file = request.files.get("video")
+    if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
+        # Save to temporary file for metadata extraction
+        temp_path = os.path.join(TEMP_VIDEO_FOLDER, f"temp_{uuid.uuid4()}_{secure_filename(video_file.filename)}")
+        video_file.save(temp_path)
+        
+        try:
+            # Get video duration
+            duration = get_video_metadata(temp_path)
+            if duration:
+                new_lesson.duration = duration
+            
+            # Upload to S3
+            video_file.seek(0)  # Reset file pointer
+            result = upload_to_s3(video_file, folder='videos')
+            
+            if result['success']:
+                new_lesson.s3_video_key = result['file_key']
+                new_lesson.video_url = result['file_url']
+                
+                # Get file size from S3
+                size = get_s3_file_size(result['file_key'])
+                if size:
+                    new_lesson.size = size
+            else:
+                return jsonify({"error": f"Failed to upload video: {result['error']}"}), 500
+        
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    # Handle document upload to S3
+    doc_file = request.files.get("document")
+    if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
+        result = upload_to_s3(doc_file, folder='docs')
+        
+        if result['success']:
+            new_lesson.s3_document_key = result['file_key']
+            new_lesson.document_url = result['file_url']
+        else:
+            return jsonify({"error": f"Failed to upload document: {result['error']}"}), 500
+
+    db.session.add(new_lesson)
     db.session.commit()
 
     return jsonify({
-        "message": "Lesson deleted successfully",
-        "lesson_id": lesson_id,
-        "section_id": section_id,
-        "course_id": course_id
-    }), 200
+        "message": "Lesson created successfully",
+        "lesson": {
+            "id": new_lesson.id,
+            "title": new_lesson.title,
+            "slug": new_lesson.slug,
+            "video_url": new_lesson.video_url,
+            "document_url": new_lesson.document_url,
+            "duration": format_duration(new_lesson.duration),
+            "size": format_size(new_lesson.size),
+            "notes": new_lesson.notes,
+            "reference_link": new_lesson.reference_link
+        }
+    }), 201
 
-@bp.route("/<int:course_id>/lessons/<int:lesson_id>", methods=["PUT"])
+@bp.route("/lessons/<int:lesson_id>", methods=["PUT"])
 @jwt_required()
 @role_required("admin")
-def update_lesson(course_id, lesson_id):
+def update_lesson(lesson_id):
+    """
+    Update lesson with S3 support
+    """
     lesson = Lesson.query.get_or_404(lesson_id)
+    data = request.form.to_dict()
 
-    # Ensure lesson belongs to this course (via section → course)
-    if lesson.section.course_id != course_id:
-        return jsonify({"error": "Lesson does not belong to this course"}), 400
-
-    raw_data = request.form.get("data")
-    if not raw_data:
-        return jsonify({"error": "Missing lesson data"}), 400
-
-    try:
-        data = json.loads(raw_data)
-    except Exception:
-        return jsonify({"error": "Invalid JSON format"}), 400
-
-    # --- Update fields ---
     lesson.title = data.get("title", lesson.title)
+    lesson.slug = slugify(lesson.title)
     lesson.notes = data.get("notes", lesson.notes)
-    ref_links = data.get("reference_link")
-    if isinstance(ref_links, list):
-        lesson.reference_link = json.dumps(ref_links)  # store array as JSON string
-    elif isinstance(ref_links, str):
-        lesson.reference_link = ref_links  # fallback (in case frontend still sends string)
-    lesson.duration = data.get("duration", lesson.duration)
+    lesson.reference_link = data.get("reference_link", lesson.reference_link)
 
-    # --- Handle new file uploads ---
+    # Handle video update
     video_file = request.files.get("video")
-    doc_file = request.files.get("document")
-
     if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
-        filename = secure_filename(video_file.filename)
-        video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
-        video_file.save(video_path)
-        lesson.video_url = f"/static/uploads/videos/{filename}"
+        # Delete old video from S3 if exists
+        if lesson.s3_video_key:
+            delete_from_s3(lesson.s3_video_key)
+        
+        # Save to temp file for metadata
+        temp_path = os.path.join(TEMP_VIDEO_FOLDER, f"temp_{uuid.uuid4()}_{secure_filename(video_file.filename)}")
+        video_file.save(temp_path)
+        
+        try:
+            # Get duration
+            duration = get_video_metadata(temp_path)
+            if duration:
+                lesson.duration = duration
+            
+            # Upload to S3
+            video_file.seek(0)
+            result = upload_to_s3(video_file, folder='videos')
+            
+            if result['success']:
+                lesson.s3_video_key = result['file_key']
+                lesson.video_url = result['file_url']
+                
+                # Get size
+                size = get_s3_file_size(result['file_key'])
+                if size:
+                    lesson.size = size
+            else:
+                return jsonify({"error": f"Failed to upload video: {result['error']}"}), 500
+        
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
-        duration, size = get_video_metadata(video_path)
-        if duration:
-            lesson.duration = duration
-        if size:
-            lesson.size = size
-
+    # Handle document update
+    doc_file = request.files.get("document")
     if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
-        filename = secure_filename(doc_file.filename)
-        doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
-        doc_file.save(doc_path)
-        lesson.document_url = f"/static/uploads/docs/{filename}"
+        # Delete old document from S3
+        if lesson.s3_document_key:
+            delete_from_s3(lesson.s3_document_key)
+        
+        result = upload_to_s3(doc_file, folder='docs')
+        
+        if result['success']:
+            lesson.s3_document_key = result['file_key']
+            lesson.document_url = result['file_url']
+        else:
+            return jsonify({"error": f"Failed to upload document: {result['error']}"}), 500
 
     db.session.commit()
 
@@ -669,7 +607,6 @@ def update_lesson(course_id, lesson_id):
             "id": lesson.id,
             "title": lesson.title,
             "video_url": lesson.video_url,
-            "document_url": lesson.document_url,
             "document_url": lesson.document_url,
             "duration": format_duration(lesson.duration),
             "size": format_size(lesson.size),
@@ -683,20 +620,42 @@ def update_lesson(course_id, lesson_id):
 @jwt_required(optional=True)
 def get_lesson_details(lesson_id):
     """
-    Returns full details of a specific lesson including video, document, notes, and quizzes.
+    Returns full details of a specific lesson with presigned URL for video access
     """
     lesson = Lesson.query.get_or_404(lesson_id)
+    user_id = get_jwt_identity()
 
-    # build lesson response
+    # Check if user has access (is enrolled and paid)
+    has_access = False
+    if user_id:
+        enrollment = Enrollment.query.filter_by(
+            user_id=user_id,
+            course_id=lesson.section.course_id,
+            status="active"
+        ).first()
+
+        if enrollment:
+            payment = (
+                Payment.query.join(
+                    Enrollment, Enrollment.payment_reference == Payment.reference
+                )
+                .filter(
+                    Payment.user_id == user_id,
+                    Payment.status == "successful",
+                    Enrollment.course_id == lesson.section.course_id
+                )
+                .first()
+            )
+            if payment:
+                has_access = True
+
+    # Build lesson response
     lesson_data = {
         "id": lesson.id,
         "title": lesson.title,
         "slug": lesson.slug,
         "notes": lesson.notes,
         "reference_link": lesson.reference_link,
-        "video_url": lesson.video_url,
-        "document_url": lesson.document_url,
-         
         "created_at": lesson.created_at.isoformat(),
         "section": {
             "id": lesson.section.id,
@@ -706,7 +665,27 @@ def get_lesson_details(lesson_id):
         "quizzes": []
     }
 
-    # include related quizzes
+    # Only provide video URL if user has access
+    if has_access:
+        # Generate presigned URL for secure video access (expires in 2 hours)
+        if lesson.s3_video_key:
+            presigned_url = generate_presigned_url(lesson.s3_video_key, expiration=7200)
+            lesson_data["video_url"] = presigned_url
+        else:
+            lesson_data["video_url"] = lesson.video_url
+        
+        # Same for documents
+        if lesson.s3_document_key:
+            presigned_url = generate_presigned_url(lesson.s3_document_key, expiration=7200)
+            lesson_data["document_url"] = presigned_url
+        else:
+            lesson_data["document_url"] = lesson.document_url
+    else:
+        lesson_data["video_url"] = None
+        lesson_data["document_url"] = None
+        lesson_data["access_denied"] = "Please enroll and complete payment to access this content"
+
+    # Include quizzes
     if hasattr(lesson, "quizzes") and lesson.quizzes:
         for quiz in lesson.quizzes:
             lesson_data["quizzes"].append({
@@ -835,7 +814,9 @@ def delete_quiz(lesson_id, quiz_id):
 @bp.route("/lessons/<int:lesson_id>/document", methods=["GET"])
 @jwt_required(optional=True)
 def download_lesson_document(lesson_id):
-    
+    """
+    Download document with presigned URL
+    """
     lesson = Lesson.query.get(lesson_id)
 
     if not lesson:
@@ -843,50 +824,56 @@ def download_lesson_document(lesson_id):
 
     if not lesson.document_url:
         return jsonify({"message": "No document available"}), 200
+    
+    user_id = get_jwt_identity()
+    
+    # Check access
+    has_access = False
+    if user_id:
+        enrollment = Enrollment.query.filter_by(
+            user_id=user_id,
+            course_id=lesson.section.course_id,
+            status="active"
+        ).first()
 
+        if enrollment:
+            payment = (
+                Payment.query.join(
+                    Enrollment, Enrollment.payment_reference == Payment.reference
+                )
+                .filter(
+                    Payment.user_id == user_id,
+                    Payment.status == "successful",
+                    Enrollment.course_id == lesson.section.course_id
+                )
+                .first()
+            )
+            if payment:
+                has_access = True
     
+    if not has_access:
+        return jsonify({"error": "Access denied. Please enroll and complete payment."}), 403
+    
+    # Generate presigned URL
+    if lesson.s3_document_key:
+        presigned_url = generate_presigned_url(lesson.s3_document_key, expiration=3600)
+        if presigned_url:
+            return jsonify({
+                "download_url": presigned_url,
+                "expires_in": 3600
+            }), 200
+        else:
+            return jsonify({"error": "Failed to generate download link"}), 500
+    
+    # Fallback to local file
     filename = os.path.basename(lesson.document_url)
-    
-    # Build ABSOLUTE path to the directory
-    # Option 1: If your Flask app is in /path/to/project/app/ and static is at /path/to/project/static/
     directory = os.path.join(current_app.root_path, '..', 'static', 'uploads', 'docs')
-    directory = os.path.abspath(directory)  # Convert to absolute path
+    directory = os.path.abspath(directory)
     
-   
-    full_file_path = os.path.join(directory, filename)
-    print(f"Full file path: {full_file_path}")
-    print(f"File exists: {os.path.exists(full_file_path)}")
+    if not os.path.exists(os.path.join(directory, filename)):
+        return jsonify({"error": "File not found"}), 404
     
-    # List files in directory for debugging
-    if os.path.exists(directory):
-        files_in_dir = os.listdir(directory)
-        print(f"Files in directory ({len(files_in_dir)} total):")
-        for f in files_in_dir[:10]:  # Show first 10
-            print(f"  - {f}")
-    
-    print('='*60 + '\n')
-    
-    # Check if file exists
-    if not os.path.exists(full_file_path):
-        return jsonify({
-            "error": "File not found",
-            "filename": filename,
-            "directory": directory,
-            "full_path": full_file_path,
-            "files_available": os.listdir(directory) if os.path.exists(directory) else []
-        }), 404
-    
-    # Send the file
     try:
-        return send_from_directory(
-            directory, 
-            filename, 
-            as_attachment=True
-        )
+        return send_from_directory(directory, filename, as_attachment=True)
     except Exception as e:
-        print(f"ERROR: {str(e)}")
-        return jsonify({
-            "error": f"Error sending file: {str(e)}",
-            "filename": filename,
-            "directory": directory
-        }), 500
+        return jsonify({"error": f"Error sending file: {str(e)}"}), 500
