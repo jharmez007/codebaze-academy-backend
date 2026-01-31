@@ -12,48 +12,35 @@ import json
 from moviepy import VideoFileClip
 import os, uuid, re
 import tempfile
+import boto3
+from dotenv import load_dotenv
 
-# Import S3 helper functions
+load_dotenv()
+
+# Import S3 helper functions - YES, YOU STILL NEED THESE!
 from app.utils.s3_helper import (
-    upload_to_s3, 
-    generate_presigned_url, 
-    delete_from_s3,
-    get_s3_file_size,
-    s3_file_exists
+    generate_presigned_url,  # For video playback
+    delete_from_s3,          # For deleting old videos
+    get_s3_file_size,        # For getting file metadata
+    s3_file_exists           # For checking if file exists
 )
 
-# Keep local folders for temporary processing only
-TEMP_VIDEO_FOLDER = tempfile.gettempdir()
+# AWS Configuration for direct upload
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
+AWS_S3_BUCKET_NAME = os.getenv('AWS_S3_BUCKET_NAME')
+
+# Keep local folders for images only
 UPLOAD_IMAGE_FOLDER = os.path.join("static", "uploads", "images")
 os.makedirs(UPLOAD_IMAGE_FOLDER, exist_ok=True)
 
-ALLOWED_VIDEO_EXT = {"mp4", "mov", "avi", "mkv", "mp3"}
-ALLOWED_DOC_EXT = {"pdf", "docx", "pptx"}
+ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska']
+ALLOWED_DOC_TYPES = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
 ALLOWED_IMG_EXT = {"png", "jpg", "jpeg", "gif"}
 
 def allowed_file(filename, allowed_ext):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed_ext
-
-def get_video_metadata(video_path):
-    """Get video duration from a local file"""
-    try:
-        clip = VideoFileClip(video_path, audio=False)
-        duration = round(clip.duration, 2) if clip.duration else None
-        return duration
-    except Exception as e:
-        print(f"Error analyzing video: {e}")
-        return None
-    finally:
-        try:
-            if "clip" in locals():
-                if hasattr(clip, "reader") and hasattr(clip.reader, "close"):
-                    clip.reader.close()
-                if hasattr(clip, "audio") and clip.audio and hasattr(clip.audio, "reader"):
-                    if hasattr(clip.audio.reader, "close_proc"):
-                        clip.audio.reader.close_proc()
-                del clip
-        except Exception as cleanup_err:
-            print(f"Cleanup warning: {cleanup_err}")
     
 def slugify(text):
     text = re.sub(r'[^a-zA-Z0-9]+', '-', text)
@@ -68,7 +55,6 @@ def format_duration(seconds):
     minutes, secs = divmod(remainder, 60)
     return f"{hours:02}:{minutes:02}:{secs:02}"
 
-
 def format_size(bytes_size):
     """Convert bytes to human-readable GB/MB/KB."""
     if not bytes_size:
@@ -80,6 +66,143 @@ def format_size(bytes_size):
     return f"{bytes_size:.2f} TB"
 
 bp = Blueprint("courses", __name__)
+
+# ============================================================================
+# NEW ROUTES FOR DIRECT S3 UPLOAD - ADD THESE!
+# ============================================================================
+
+@bp.route("/generate-upload-url", methods=["POST"])
+@jwt_required()
+@role_required("admin")
+def generate_upload_url():
+    """
+    Generate presigned POST URL for direct browser upload to S3
+    Frontend calls this BEFORE uploading
+    """
+    data = request.get_json()
+    
+    if not data or not data.get('filename') or not data.get('filetype'):
+        return jsonify({"error": "filename and filetype are required"}), 400
+    
+    filename = data.get('filename')
+    filetype = data.get('filetype')
+    folder = data.get('folder', 'videos')
+    
+    # Validate file type
+    if folder == 'videos' and filetype not in ALLOWED_VIDEO_TYPES:
+        return jsonify({"error": f"Invalid video type. Allowed: {ALLOWED_VIDEO_TYPES}"}), 400
+    
+    if folder == 'docs' and filetype not in ALLOWED_DOC_TYPES:
+        return jsonify({"error": f"Invalid document type. Allowed: {ALLOWED_DOC_TYPES}"}), 400
+    
+    # Generate unique filename
+    file_extension = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'mp4'
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    file_key = f"{folder}/{unique_filename}"
+    
+    # Create S3 client
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        region_name=AWS_REGION
+    )
+    
+    try:
+        # Generate presigned POST URL
+        presigned_post = s3_client.generate_presigned_post(
+            Bucket=AWS_S3_BUCKET_NAME,
+            Key=file_key,
+            Fields={
+                'Content-Type': filetype,
+                'Cache-Control': 'max-age=31536000',
+            },
+            Conditions=[
+                {'Content-Type': filetype},
+                ['content-length-range', 0, 10737418240],  # Max 10GB
+            ],
+            ExpiresIn=3600  # URL expires in 1 hour
+        )
+        
+        # Generate the final file URL
+        file_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
+        
+        return jsonify({
+            'upload_url': presigned_post['url'],
+            'fields': presigned_post['fields'],
+            'file_key': file_key,
+            'file_url': file_url
+        }), 200
+    
+    except Exception as e:
+        print(f"Error generating presigned POST: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/confirm-upload", methods=["POST"])
+@jwt_required()
+@role_required("admin")
+def confirm_upload():
+    """
+    After frontend uploads to S3, call this to save metadata
+    Frontend calls this AFTER uploading
+    """
+    data = request.get_json()
+    
+    if not data or not data.get('lesson_id') or not data.get('file_key'):
+        return jsonify({"error": "lesson_id and file_key are required"}), 400
+    
+    lesson_id = data.get('lesson_id')
+    file_key = data.get('file_key')
+    file_url = data.get('file_url')
+    file_type = data.get('file_type', 'video')
+    duration = data.get('duration')
+    size = data.get('size')
+    
+    # Get lesson
+    lesson = Lesson.query.get(lesson_id)
+    if not lesson:
+        return jsonify({"error": "Lesson not found"}), 404
+    
+    # Update lesson with S3 info
+    if file_type == 'video':
+        # Delete old video if exists
+        if lesson.s3_video_key:
+            delete_from_s3(lesson.s3_video_key)
+        
+        lesson.s3_video_key = file_key
+        lesson.video_url = file_url
+        if duration:
+            lesson.duration = duration
+        if size:
+            lesson.size = size
+    elif file_type == 'document':
+        # Delete old document if exists
+        if lesson.s3_document_key:
+            delete_from_s3(lesson.s3_document_key)
+        
+        lesson.s3_document_key = file_key
+        lesson.document_url = file_url
+    
+    db.session.commit()
+    
+    return jsonify({
+        "message": "Upload confirmed successfully",
+        "lesson": {
+            "id": lesson.id,
+            "title": lesson.title,
+            "video_url": lesson.video_url if file_type == 'video' else None,
+            "document_url": lesson.document_url if file_type == 'document' else None,
+            "s3_video_key": lesson.s3_video_key if file_type == 'video' else None,
+            "s3_document_key": lesson.s3_document_key if file_type == 'document' else None,
+            "duration": format_duration(lesson.duration) if lesson.duration else None,
+            "size": format_size(lesson.size) if lesson.size else None
+        }
+    }), 200
+
+# ============================================================================
+# EXISTING ROUTES (Keep all your existing routes below)
+# ============================================================================
 
 # List all published courses
 @bp.route("/", methods=["GET"])
@@ -130,11 +253,9 @@ def get_course(course_id):
     user_id = get_jwt_identity()
     user_currency = detect_currency()
 
-    # Default values
     is_paid = False
     is_enrolled = False
 
-    # Check enrollment & payment only if user is logged in
     if user_id:
         enrollment = Enrollment.query.filter_by(
             user_id=user_id,
@@ -160,13 +281,11 @@ def get_course(course_id):
         if payment:
             is_paid = True
 
-    # Currency conversion
     if user_currency == "USD":
         price = convert_ngn_to_usd(course.price)
     else:
         price = course.price
 
-    # Build response
     response = {
         "id": course.id,
         "title": course.title,
@@ -206,16 +325,11 @@ def get_course(course_id):
 
     return jsonify(response)
 
-
 @bp.route("/<int:course_id>/full", methods=["GET"])
 @jwt_required(optional=True)
 def get_full_course(course_id):
-    """
-    Returns full course data including all sections, lessons, and quizzes.
-    """
     course = Course.query.get_or_404(course_id)
 
-    # Build deep nested response
     course_data = {
         "id": course.id,
         "title": course.title,
@@ -254,7 +368,6 @@ def get_full_course(course_id):
                 "quizzes": []
             }
 
-            # Add quizzes if they exist
             if hasattr(lesson, 'quizzes') and lesson.quizzes:
                 for quiz in lesson.quizzes:
                     lesson_data["quizzes"].append({
@@ -323,18 +436,12 @@ def update_course(course_id):
     course.price = data.get("price", course.price)
     course.is_published = data.get("is_published", course.is_published)
 
-    # Handle image upload (images still stored locally or can be moved to S3)
     image_file = request.files.get("image")
     if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
         filename = secure_filename(image_file.filename)
         image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
         image_file.save(image_path)
         course.image = f"/static/uploads/images/{filename}"
-        
-        # Alternative: Upload to S3
-        # result = upload_to_s3(image_file, folder='images')
-        # if result['success']:
-        #     course.image = result['file_url']
 
     db.session.commit()
 
@@ -355,7 +462,6 @@ def update_course(course_id):
 def delete_course(course_id):
     course = Course.query.get_or_404(course_id)
     
-    # Delete all associated videos from S3
     for section in course.sections:
         for lesson in section.lessons:
             if lesson.s3_video_key:
@@ -432,7 +538,6 @@ def delete_section(course_id, section_id):
     if section.course_id != course_id:
         return jsonify({"error": "Section does not belong to this course"}), 400
     
-    # Delete all videos from S3 before deleting section
     for lesson in section.lessons:
         if lesson.s3_video_key:
             delete_from_s3(lesson.s3_video_key)
@@ -444,25 +549,27 @@ def delete_section(course_id, section_id):
 
     return jsonify({"message": "Section deleted successfully"}), 200
 
+# MODIFIED: Create lesson now only creates metadata, no file upload
 @bp.route("/<int:course_id>/sections/<int:section_id>/lessons", methods=["POST"])
 @jwt_required()
 @role_required("admin")
 def create_lesson(course_id, section_id):
     """
-    Create a new lesson with S3 video upload support
+    Create a new lesson - METADATA ONLY
+    Videos are uploaded directly to S3 by frontend, then confirmed via /confirm-upload
     """
     section = Section.query.get_or_404(section_id)
 
     if section.course_id != course_id:
         return jsonify({"error": "Section does not belong to this course"}), 400
 
-    data = request.form.to_dict()
+    data = request.get_json()  # Changed from request.form to request.get_json()
     title = data.get("title")
 
     if not title:
         return jsonify({"error": "Lesson title is required"}), 400
 
-    # Create lesson
+    # Create lesson with just metadata
     new_lesson = Lesson(
         title=title,
         slug=slugify(title),
@@ -470,50 +577,6 @@ def create_lesson(course_id, section_id):
         reference_link=data.get("reference_link", ""),
         section=section
     )
-
-    # Handle video upload to S3
-    video_file = request.files.get("video")
-    if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
-        # Save to temporary file for metadata extraction
-        temp_path = os.path.join(TEMP_VIDEO_FOLDER, f"temp_{uuid.uuid4()}_{secure_filename(video_file.filename)}")
-        video_file.save(temp_path)
-        
-        try:
-            # Get video duration
-            duration = get_video_metadata(temp_path)
-            if duration:
-                new_lesson.duration = duration
-            
-            # Upload to S3
-            video_file.seek(0)  # Reset file pointer
-            result = upload_to_s3(video_file, folder='videos')
-            
-            if result['success']:
-                new_lesson.s3_video_key = result['file_key']
-                new_lesson.video_url = result['file_url']
-                
-                # Get file size from S3
-                size = get_s3_file_size(result['file_key'])
-                if size:
-                    new_lesson.size = size
-            else:
-                return jsonify({"error": f"Failed to upload video: {result['error']}"}), 500
-        
-        finally:
-            # Clean up temp file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
-    # Handle document upload to S3
-    doc_file = request.files.get("document")
-    if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
-        result = upload_to_s3(doc_file, folder='docs')
-        
-        if result['success']:
-            new_lesson.s3_document_key = result['file_key']
-            new_lesson.document_url = result['file_url']
-        else:
-            return jsonify({"error": f"Failed to upload document: {result['error']}"}), 500
 
     db.session.add(new_lesson)
     db.session.commit()
@@ -524,80 +587,27 @@ def create_lesson(course_id, section_id):
             "id": new_lesson.id,
             "title": new_lesson.title,
             "slug": new_lesson.slug,
-            "video_url": new_lesson.video_url,
-            "document_url": new_lesson.document_url,
-            "duration": format_duration(new_lesson.duration),
-            "size": format_size(new_lesson.size),
             "notes": new_lesson.notes,
             "reference_link": new_lesson.reference_link
         }
     }), 201
 
+# MODIFIED: Update lesson metadata only
 @bp.route("/lessons/<int:lesson_id>", methods=["PUT"])
 @jwt_required()
 @role_required("admin")
 def update_lesson(lesson_id):
     """
-    Update lesson with S3 support
+    Update lesson metadata
+    Videos are updated via direct S3 upload + /confirm-upload
     """
     lesson = Lesson.query.get_or_404(lesson_id)
-    data = request.form.to_dict()
+    data = request.get_json()
 
     lesson.title = data.get("title", lesson.title)
     lesson.slug = slugify(lesson.title)
     lesson.notes = data.get("notes", lesson.notes)
     lesson.reference_link = data.get("reference_link", lesson.reference_link)
-
-    # Handle video update
-    video_file = request.files.get("video")
-    if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
-        # Delete old video from S3 if exists
-        if lesson.s3_video_key:
-            delete_from_s3(lesson.s3_video_key)
-        
-        # Save to temp file for metadata
-        temp_path = os.path.join(TEMP_VIDEO_FOLDER, f"temp_{uuid.uuid4()}_{secure_filename(video_file.filename)}")
-        video_file.save(temp_path)
-        
-        try:
-            # Get duration
-            duration = get_video_metadata(temp_path)
-            if duration:
-                lesson.duration = duration
-            
-            # Upload to S3
-            video_file.seek(0)
-            result = upload_to_s3(video_file, folder='videos')
-            
-            if result['success']:
-                lesson.s3_video_key = result['file_key']
-                lesson.video_url = result['file_url']
-                
-                # Get size
-                size = get_s3_file_size(result['file_key'])
-                if size:
-                    lesson.size = size
-            else:
-                return jsonify({"error": f"Failed to upload video: {result['error']}"}), 500
-        
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
-    # Handle document update
-    doc_file = request.files.get("document")
-    if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
-        # Delete old document from S3
-        if lesson.s3_document_key:
-            delete_from_s3(lesson.s3_document_key)
-        
-        result = upload_to_s3(doc_file, folder='docs')
-        
-        if result['success']:
-            lesson.s3_document_key = result['file_key']
-            lesson.document_url = result['file_url']
-        else:
-            return jsonify({"error": f"Failed to upload document: {result['error']}"}), 500
 
     db.session.commit()
 
@@ -606,26 +616,22 @@ def update_lesson(lesson_id):
         "lesson": {
             "id": lesson.id,
             "title": lesson.title,
+            "slug": lesson.slug,
             "video_url": lesson.video_url,
             "document_url": lesson.document_url,
-            "duration": format_duration(lesson.duration),
-            "size": format_size(lesson.size),
+            "duration": format_duration(lesson.duration) if lesson.duration else None,
+            "size": format_size(lesson.size) if lesson.size else None,
             "notes": lesson.notes,
             "reference_link": lesson.reference_link
         }
     }), 200
 
-
 @bp.route("/lessons/<int:lesson_id>", methods=["GET"])
 @jwt_required(optional=True)
 def get_lesson_details(lesson_id):
-    """
-    Returns full details of a specific lesson with presigned URL for video access
-    """
     lesson = Lesson.query.get_or_404(lesson_id)
     user_id = get_jwt_identity()
 
-    # Check if user has access (is enrolled and paid)
     has_access = False
     if user_id:
         enrollment = Enrollment.query.filter_by(
@@ -649,7 +655,6 @@ def get_lesson_details(lesson_id):
             if payment:
                 has_access = True
 
-    # Build lesson response
     lesson_data = {
         "id": lesson.id,
         "title": lesson.title,
@@ -665,16 +670,13 @@ def get_lesson_details(lesson_id):
         "quizzes": []
     }
 
-    # Only provide video URL if user has access
     if has_access:
-        # Generate presigned URL for secure video access (expires in 2 hours)
         if lesson.s3_video_key:
             presigned_url = generate_presigned_url(lesson.s3_video_key, expiration=7200)
             lesson_data["video_url"] = presigned_url
         else:
             lesson_data["video_url"] = lesson.video_url
         
-        # Same for documents
         if lesson.s3_document_key:
             presigned_url = generate_presigned_url(lesson.s3_document_key, expiration=7200)
             lesson_data["document_url"] = presigned_url
@@ -685,7 +687,6 @@ def get_lesson_details(lesson_id):
         lesson_data["document_url"] = None
         lesson_data["access_denied"] = "Please enroll and complete payment to access this content"
 
-    # Include quizzes
     if hasattr(lesson, "quizzes") and lesson.quizzes:
         for quiz in lesson.quizzes:
             lesson_data["quizzes"].append({
@@ -698,7 +699,7 @@ def get_lesson_details(lesson_id):
 
     return jsonify(lesson_data), 200
 
-
+# Keep all your quiz routes as they are...
 @bp.route("/<int:course_id>/lessons/<int:lesson_id>/add-quiz", methods=["POST"])
 @jwt_required()
 @role_required("admin")
@@ -721,12 +722,10 @@ def add_quiz(course_id, lesson_id):
     if not question or not correct_answer or not quiz_type:
         return jsonify({"error": "Incomplete quiz data"}), 400
 
-    # Validate quiz_type
     valid_types = ["multiple_choice", "true_false", "free_text"]
     if quiz_type not in valid_types:
         return jsonify({"error": f"Invalid quiz type. Must be one of {valid_types}"}), 400
 
-    # For multiple choice, options are required
     if quiz_type == "multiple_choice" and (not options or not isinstance(options, list)):
         return jsonify({"error": "Options must be provided for multiple choice quizzes"}), 400
 
@@ -754,7 +753,6 @@ def add_quiz(course_id, lesson_id):
         }
     }), 201
 
-
 @bp.route("/lessons/<int:lesson_id>/quizzes/<int:quiz_id>", methods=["PUT"])
 @jwt_required()
 @role_required("admin")
@@ -775,7 +773,6 @@ def update_quiz(lesson_id, quiz_id):
     quiz.quiz_type = data.get("quiz_type", quiz.quiz_type)
     quiz.explanation = data.get("explanation", quiz.explanation)
 
-    # Validate quiz_type when updating
     valid_types = ["multiple_choice", "true_false", "free_text"]
     if quiz.quiz_type not in valid_types:
         return jsonify({"error": f"Invalid quiz type. Must be one of {valid_types}"}), 400
@@ -798,9 +795,6 @@ def update_quiz(lesson_id, quiz_id):
 @jwt_required()
 @role_required("admin")
 def delete_quiz(lesson_id, quiz_id):
-    """
-    Delete a specific quiz under a lesson.
-    """
     quiz = Quiz.query.get_or_404(quiz_id)
 
     if quiz.lesson_id != lesson_id:
@@ -814,9 +808,6 @@ def delete_quiz(lesson_id, quiz_id):
 @bp.route("/lessons/<int:lesson_id>/document", methods=["GET"])
 @jwt_required(optional=True)
 def download_lesson_document(lesson_id):
-    """
-    Download document with presigned URL
-    """
     lesson = Lesson.query.get(lesson_id)
 
     if not lesson:
@@ -827,7 +818,6 @@ def download_lesson_document(lesson_id):
     
     user_id = get_jwt_identity()
     
-    # Check access
     has_access = False
     if user_id:
         enrollment = Enrollment.query.filter_by(
@@ -854,7 +844,6 @@ def download_lesson_document(lesson_id):
     if not has_access:
         return jsonify({"error": "Access denied. Please enroll and complete payment."}), 403
     
-    # Generate presigned URL
     if lesson.s3_document_key:
         presigned_url = generate_presigned_url(lesson.s3_document_key, expiration=3600)
         if presigned_url:
@@ -865,7 +854,6 @@ def download_lesson_document(lesson_id):
         else:
             return jsonify({"error": "Failed to generate download link"}), 500
     
-    # Fallback to local file
     filename = os.path.basename(lesson.document_url)
     directory = os.path.join(current_app.root_path, '..', 'static', 'uploads', 'docs')
     directory = os.path.abspath(directory)

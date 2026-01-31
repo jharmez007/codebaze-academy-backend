@@ -1,7 +1,7 @@
 from flask import Flask
 from .config import Config
 from .extensions import db, migrate, jwt, mail
-from .routes import auth, student, admin, courses, enrollments, progress, comments, payment, coupon, lessons
+from .routes import auth, student, admin, courses, enrollments, progress, comments, payment, coupon, lessons, s3_direct_upload
 from flask_cors import CORS
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -44,5 +44,6 @@ def create_app():
     app.register_blueprint(coupon.bp)
     app.register_blueprint(admin.bp, url_prefix='/admin')
     app.register_blueprint(lessons.bp, url_prefix='/lessons')
+    app.register_blueprint(s3_direct_upload.bp, url_prefix='/upload')
 
     return app
