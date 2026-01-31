@@ -28,8 +28,8 @@ moviepy==2.2.1
 numpy==2.3.5
 pillow==11.3.0
 proglog==0.1.12
-psycopg2==2.9.11
 pycparser==2.23
+psycopg2-binary==2.9.11
 pydyf==0.11.0
 PyJWT==2.10.1
 PyMySQL==1.1.2
