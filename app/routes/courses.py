@@ -71,6 +71,178 @@ bp = Blueprint("courses", __name__)
 # NEW ROUTES FOR DIRECT S3 UPLOAD - ADD THESE!
 # ============================================================================
 
+# Add this NEW route to your routes/courses.py
+# This uses PUT instead of POST for simpler, more reliable uploads
+
+@bp.route("/generate-put-upload-url", methods=["POST"])
+@jwt_required()
+@role_required("admin")
+def generate_put_upload_url():
+    """
+    Generate presigned PUT URL for direct browser upload to S3
+    This is simpler and more reliable than POST
+    Frontend uploads using PUT method
+    """
+    data = request.get_json()
+    
+    if not data or not data.get('filename') or not data.get('filetype'):
+        return jsonify({"error": "filename and filetype are required"}), 400
+    
+    filename = data.get('filename')
+    filetype = data.get('filetype')
+    folder = data.get('folder', 'videos')
+    
+    # Validate file type
+    if folder == 'videos' and filetype not in ALLOWED_VIDEO_TYPES:
+        return jsonify({"error": f"Invalid video type. Allowed: {ALLOWED_VIDEO_TYPES}"}), 400
+    
+    if folder == 'docs' and filetype not in ALLOWED_DOC_TYPES:
+        return jsonify({"error": f"Invalid document type. Allowed: {ALLOWED_DOC_TYPES}"}), 400
+    
+    # Generate unique filename
+    file_extension = filename.rsplit('.', 1)[1].lower() if '.' in filename else 'mp4'
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    file_key = f"{folder}/{unique_filename}"
+    
+    # Create S3 client
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        region_name=AWS_REGION
+    )
+    
+    try:
+        # Generate presigned PUT URL (much simpler than POST!)
+        presigned_url = s3_client.generate_presigned_url(
+            'put_object',
+            Params={
+                'Bucket': AWS_S3_BUCKET_NAME,
+                'Key': file_key,
+                'ContentType': filetype,
+            },
+            ExpiresIn=3600  # URL expires in 1 hour
+        )
+        
+        # Generate the final file URL
+        file_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
+        
+        return jsonify({
+            'upload_url': presigned_url,  # Use this URL for PUT request
+            'file_key': file_key,
+            'file_url': file_url,
+            'content_type': filetype,
+            'method': 'PUT'  # Important: tell frontend to use PUT
+        }), 200
+    
+    except Exception as e:
+        print(f"Error generating presigned PUT URL: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# Alternative: Direct backend upload (if presigned URLs keep failing)
+@bp.route("/upload-to-s3-backend", methods=["POST"])
+@jwt_required()
+@role_required("admin")
+def upload_to_s3_backend():
+    """
+    Upload file through backend to S3 (fallback option)
+    Use this if presigned URLs continue to fail
+    """
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    
+    file = request.files['file']
+    lesson_id = request.form.get('lesson_id')
+    file_type = request.form.get('file_type', 'video')
+    
+    if not lesson_id:
+        return jsonify({"error": "lesson_id is required"}), 400
+    
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    
+    # Get lesson
+    lesson = Lesson.query.get(lesson_id)
+    if not lesson:
+        return jsonify({"error": "Lesson not found"}), 404
+    
+    # Validate file type
+    content_type = file.content_type
+    if file_type == 'video' and content_type not in ALLOWED_VIDEO_TYPES:
+        return jsonify({"error": f"Invalid video type. Allowed: {ALLOWED_VIDEO_TYPES}"}), 400
+    
+    if file_type == 'document' and content_type not in ALLOWED_DOC_TYPES:
+        return jsonify({"error": f"Invalid document type. Allowed: {ALLOWED_DOC_TYPES}"}), 400
+    
+    # Generate unique filename
+    file_extension = file.filename.rsplit('.', 1)[1].lower() if '.' in file.filename else 'mp4'
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+    folder = 'videos' if file_type == 'video' else 'docs'
+    file_key = f"{folder}/{unique_filename}"
+    
+    # Create S3 client
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        region_name=AWS_REGION
+    )
+    
+    try:
+        # Upload directly to S3
+        s3_client.upload_fileobj(
+            file,
+            AWS_S3_BUCKET_NAME,
+            file_key,
+            ExtraArgs={
+                'ContentType': content_type,
+                'CacheControl': 'max-age=31536000'
+            }
+        )
+        
+        # Get file size
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)
+        
+        # Generate file URL
+        file_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
+        
+        # Update lesson
+        if file_type == 'video':
+            if lesson.s3_video_key:
+                delete_from_s3(lesson.s3_video_key)
+            
+            lesson.s3_video_key = file_key
+            lesson.video_url = file_url
+            lesson.size = file_size
+        elif file_type == 'document':
+            if lesson.s3_document_key:
+                delete_from_s3(lesson.s3_document_key)
+            
+            lesson.s3_document_key = file_key
+            lesson.document_url = file_url
+        
+        db.session.commit()
+        
+        return jsonify({
+            "message": "File uploaded successfully",
+            "lesson": {
+                "id": lesson.id,
+                "title": lesson.title,
+                "video_url": lesson.video_url if file_type == 'video' else None,
+                "document_url": lesson.document_url if file_type == 'document' else None,
+                "s3_video_key": lesson.s3_video_key if file_type == 'video' else None,
+                "s3_document_key": lesson.s3_document_key if file_type == 'document' else None,
+                "size": format_size(lesson.size) if file_type == 'video' and lesson.size else None
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"Error uploading to S3: {e}")
+        return jsonify({"error": str(e)}), 500
+    
 @bp.route("/generate-upload-url", methods=["POST"])
 @jwt_required()
 @role_required("admin")
