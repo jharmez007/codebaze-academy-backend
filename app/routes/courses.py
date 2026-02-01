@@ -74,14 +74,14 @@ bp = Blueprint("courses", __name__)
 # Add this NEW route to your routes/courses.py
 # This uses PUT instead of POST for simpler, more reliable uploads
 
-@bp.route("/generate-put-upload-url", methods=["POST"])
+@bp.route("/generate-upload-url", methods=["POST"])
 @jwt_required()
 @role_required("admin")
-def generate_put_upload_url():
+def generate_upload_url():
     """
     Generate presigned PUT URL for direct browser upload to S3
-    This is simpler and more reliable than POST
-    Frontend uploads using PUT method
+    FIXED: Includes ContentDisposition header for video streaming
+    Frontend should upload using fetch() with PUT method
     """
     data = request.get_json()
     
@@ -104,39 +104,59 @@ def generate_put_upload_url():
     unique_filename = f"{uuid.uuid4()}.{file_extension}"
     file_key = f"{folder}/{unique_filename}"
     
-    # Create S3 client
+    # Create S3 client with proper configuration
     s3_client = boto3.client(
         's3',
         aws_access_key_id=AWS_ACCESS_KEY_ID,
         aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=AWS_REGION
+        region_name=AWS_REGION,
+        config=boto3.session.Config(
+            signature_version='s3v4',
+            s3={'addressing_style': 'virtual'}
+        )
     )
     
     try:
-        # Generate presigned PUT URL (much simpler than POST!)
+        # Set ContentDisposition based on file type
+        if folder == 'videos':
+            content_disposition = 'inline'  # Stream videos
+        else:
+            content_disposition = f'attachment; filename="{secure_filename(filename)}"'  # Download docs
+        
+        # Generate presigned PUT URL with proper headers for streaming
         presigned_url = s3_client.generate_presigned_url(
             'put_object',
             Params={
                 'Bucket': AWS_S3_BUCKET_NAME,
                 'Key': file_key,
                 'ContentType': filetype,
+                'ContentDisposition': content_disposition,
+                'CacheControl': 'max-age=31536000'
             },
-            ExpiresIn=3600  # URL expires in 1 hour
+            ExpiresIn=3600,  # URL expires in 1 hour
+            HttpMethod='PUT'
         )
         
         # Generate the final file URL
         file_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
         
+        print(f"✅ Generated presigned URL for: {filename}")
+        print(f"📂 File key: {file_key}")
+        print(f"🌐 Region: {AWS_REGION}")
+        
         return jsonify({
-            'upload_url': presigned_url,  # Use this URL for PUT request
+            'upload_url': presigned_url,
             'file_key': file_key,
             'file_url': file_url,
             'content_type': filetype,
-            'method': 'PUT'  # Important: tell frontend to use PUT
+            'content_disposition': content_disposition,
+            'method': 'PUT'
         }), 200
     
     except Exception as e:
-        print(f"Error generating presigned PUT URL: {e}")
+        print(f"❌ Error generating presigned PUT URL: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -146,8 +166,9 @@ def generate_put_upload_url():
 @role_required("admin")
 def upload_to_s3_backend():
     """
-    Upload file through backend to S3 (fallback option)
-    Use this if presigned URLs continue to fail
+    Upload file through backend to S3 (FALLBACK option)
+    Use this if direct upload fails or for small files
+    Includes proper headers for video streaming
     """
     if 'file' not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -190,39 +211,86 @@ def upload_to_s3_backend():
     )
     
     try:
-        # Upload directly to S3
+        print(f"📤 Uploading {file.filename} to S3...")
+        print(f"📂 Destination: {file_key}")
+        
+        # Get file size first
+        file.seek(0, os.SEEK_END)
+        file_size = file.tell()
+        file.seek(0)
+        print(f"📦 File size: {format_size(file_size)}")
+        
+        # Prepare upload parameters with proper headers
+        extra_args = {
+            'ContentType': content_type,
+            'CacheControl': 'max-age=31536000',
+            'Metadata': {
+                'original-filename': secure_filename(file.filename)
+            }
+        }
+        
+        # Set ContentDisposition for streaming vs download
+        if file_type == 'video':
+            extra_args['ContentDisposition'] = 'inline'  # Videos stream in browser
+            print("🎬 Setting ContentDisposition to 'inline' for video streaming")
+        else:
+            extra_args['ContentDisposition'] = f'attachment; filename="{secure_filename(file.filename)}"'
+            print("📄 Setting ContentDisposition to 'attachment' for document download")
+        
+        # Upload to S3
         s3_client.upload_fileobj(
             file,
             AWS_S3_BUCKET_NAME,
             file_key,
-            ExtraArgs={
-                'ContentType': content_type,
-                'CacheControl': 'max-age=31536000'
-            }
+            ExtraArgs=extra_args
         )
         
-        # Get file size
-        file.seek(0, os.SEEK_END)
-        file_size = file.tell()
-        file.seek(0)
+        print(f"✅ Upload successful!")
         
         # Generate file URL
         file_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
         
-        # Update lesson
+        # Update lesson in database
         if file_type == 'video':
+            # Delete old video if exists
             if lesson.s3_video_key:
+                print(f"🗑️ Deleting old video: {lesson.s3_video_key}")
                 delete_from_s3(lesson.s3_video_key)
             
             lesson.s3_video_key = file_key
             lesson.video_url = file_url
             lesson.size = file_size
+            
         elif file_type == 'document':
+            # Delete old document if exists
             if lesson.s3_document_key:
+                print(f"🗑️ Deleting old document: {lesson.s3_document_key}")
                 delete_from_s3(lesson.s3_document_key)
             
             lesson.s3_document_key = file_key
             lesson.document_url = file_url
+        
+        db.session.commit()
+        print(f"💾 Database updated for lesson #{lesson.id}")
+        
+        return jsonify({
+            "message": "File uploaded successfully",
+            "lesson": {
+                "id": lesson.id,
+                "title": lesson.title,
+                "video_url": lesson.video_url if file_type == 'video' else None,
+                "document_url": lesson.document_url if file_type == 'document' else None,
+                "s3_video_key": lesson.s3_video_key if file_type == 'video' else None,
+                "s3_document_key": lesson.s3_document_key if file_type == 'document' else None,
+                "size": format_size(lesson.size) if file_type == 'video' and lesson.size else None
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error uploading to S3: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
         
         db.session.commit()
         
