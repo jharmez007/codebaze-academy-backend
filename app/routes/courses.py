@@ -297,10 +297,7 @@ def upload_to_s3_backend():
 @jwt_required()
 @role_required("admin")
 def confirm_upload():
-    """
-    After frontend uploads to S3, call this to save metadata
-    Frontend calls this AFTER uploading
-    """
+
     data = request.get_json()
     
     if not data or not data.get('lesson_id') or not data.get('file_key'):
@@ -310,29 +307,51 @@ def confirm_upload():
     file_key = data.get('file_key')
     file_url = data.get('file_url')
     file_type = data.get('file_type', 'video')
-    duration = data.get('duration')
-    size = data.get('size')
+    duration = data.get('duration')  # Optional - from frontend
+    size = data.get('size')  # Optional - will auto-fetch if not provided
     
     # Get lesson
     lesson = Lesson.query.get(lesson_id)
     if not lesson:
         return jsonify({"error": "Lesson not found"}), 404
     
+    # Create S3 client for metadata retrieval
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        region_name=AWS_REGION
+    )
+    
+    # Auto-fetch file size from S3 if not provided
+    if not size:
+        try:
+            response = s3_client.head_object(Bucket=AWS_S3_BUCKET_NAME, Key=file_key)
+            size = response['ContentLength']
+        except Exception as e:
+            size = None
+    
     # Update lesson with S3 info
     if file_type == 'video':
         # Delete old video if exists
-        if lesson.s3_video_key:
+        if lesson.s3_video_key and lesson.s3_video_key != file_key:
+            print(f"🗑️ Deleting old video: {lesson.s3_video_key}")
             delete_from_s3(lesson.s3_video_key)
         
         lesson.s3_video_key = file_key
         lesson.video_url = file_url
+        
+        # Update duration if provided
         if duration:
             lesson.duration = duration
+        
+        # Update size (either from frontend or auto-fetched from S3)
         if size:
             lesson.size = size
+            
     elif file_type == 'document':
         # Delete old document if exists
-        if lesson.s3_document_key:
+        if lesson.s3_document_key and lesson.s3_document_key != file_key:
             delete_from_s3(lesson.s3_document_key)
         
         lesson.s3_document_key = file_key
@@ -349,8 +368,8 @@ def confirm_upload():
             "document_url": lesson.document_url if file_type == 'document' else None,
             "s3_video_key": lesson.s3_video_key if file_type == 'video' else None,
             "s3_document_key": lesson.s3_document_key if file_type == 'document' else None,
-            "duration": format_duration(lesson.duration) if lesson.duration else None,
-            "size": format_size(lesson.size) if lesson.size else None
+            "duration": format_duration(lesson.duration) if lesson.duration else "00:00:00",
+            "size": format_size(lesson.size) if lesson.size else "0 KB"
         }
     }), 200
 
@@ -699,15 +718,10 @@ def delete_section(course_id, section_id):
 
     return jsonify({"message": "Section deleted successfully"}), 200
 
-# MODIFIED: Create lesson now only creates metadata, no file upload
 @bp.route("/<int:course_id>/sections/<int:section_id>/lessons", methods=["POST"])
 @jwt_required()
 @role_required("admin")
 def create_lesson(course_id, section_id):
-    """
-    Create a new lesson - METADATA ONLY
-    Videos are uploaded directly to S3 by frontend, then confirmed via /confirm-upload
-    """
     section = Section.query.get_or_404(section_id)
 
     if section.course_id != course_id:
@@ -747,10 +761,6 @@ def create_lesson(course_id, section_id):
 @jwt_required()
 @role_required("admin")
 def update_lesson(lesson_id):
-    """
-    Update lesson metadata
-    Videos are updated via direct S3 upload + /confirm-upload
-    """
     lesson = Lesson.query.get_or_404(lesson_id)
     data = request.get_json()
 
@@ -849,7 +859,40 @@ def get_lesson_details(lesson_id):
 
     return jsonify(lesson_data), 200
 
-# Keep all your quiz routes as they are...
+@bp.route("/<int:course_id>/sections/<int:section_id>/lessons/<int:lesson_id>", methods=["DELETE"])
+@jwt_required()
+@role_required("admin")
+def delete_lesson(course_id, section_id, lesson_id):
+    
+    lesson = Lesson.query.get_or_404(lesson_id)
+    
+    # Verify lesson belongs to the specified section and course
+    if lesson.section_id != section_id:
+        return jsonify({"error": "Lesson does not belong to this section"}), 400
+    
+    if lesson.section.course_id != course_id:
+        return jsonify({"error": "Section does not belong to this course"}), 400
+    
+    # Delete S3 files if they exist
+    if lesson.s3_video_key:
+        delete_from_s3(lesson.s3_video_key)
+    
+    if lesson.s3_document_key:
+        delete_from_s3(lesson.s3_document_key)
+    
+    # Delete the lesson from database
+    lesson_title = lesson.title
+    db.session.delete(lesson)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Lesson deleted successfully",
+        "deleted_lesson": {
+            "id": lesson_id,
+            "title": lesson_title
+        }
+    }), 200
+
 @bp.route("/<int:course_id>/lessons/<int:lesson_id>/add-quiz", methods=["POST"])
 @jwt_required()
 @role_required("admin")
