@@ -408,7 +408,7 @@ def list_courses_all():
         })
     return jsonify(result)
 
-@bp.route("/<int:course_id>/publish", methods=["PUT"])
+@bp.route("/<int:course_id>/publish", methods=["PATCH", "OPTIONS"])
 @jwt_required()
 @role_required("admin")
 def publish_course(course_id):
