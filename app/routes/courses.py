@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, send_from_directory, current_app
 from app.extensions import db
 from werkzeug.utils import secure_filename
 from app.models import Course, Lesson, Enrollment
-from app.models.user import Payment
+from app.models.user import Payment, User
 from app.models.course import Section
 from app.models.lesson import Quiz
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -66,13 +66,6 @@ def format_size(bytes_size):
     return f"{bytes_size:.2f} TB"
 
 bp = Blueprint("courses", __name__)
-
-# ============================================================================
-# NEW ROUTES FOR DIRECT S3 UPLOAD - ADD THESE!
-# ============================================================================
-
-# Add this NEW route to your routes/courses.py
-# This uses PUT instead of POST for simpler, more reliable uploads
 
 @bp.route("/generate-upload-url", methods=["POST"])
 @jwt_required()
@@ -415,6 +408,32 @@ def list_courses_all():
         })
     return jsonify(result)
 
+@bp.route("/<int:course_id>/publish", methods=["PUT"])
+@jwt_required()
+@role_required("admin")
+def publish_course(course_id):
+    """Toggle course publication status"""
+    course = Course.query.get_or_404(course_id)
+    data = request.get_json()
+    
+    # Toggle or set specific value
+    if data and "is_published" in data:
+        course.is_published = data.get("is_published")
+    else:
+        # Toggle if no data provided
+        course.is_published = not course.is_published
+    
+    db.session.commit()
+    
+    return jsonify({
+        "message": f"Course {'published' if course.is_published else 'unpublished'} successfully",
+        "course": {
+            "id": course.id,
+            "title": course.title,
+            "is_published": course.is_published
+        }
+    }), 200
+
 @bp.route("/<int:course_id>", methods=["GET"])
 @jwt_required(optional=True)
 def get_course(course_id):
@@ -498,6 +517,38 @@ def get_course(course_id):
 @jwt_required(optional=True)
 def get_full_course(course_id):
     course = Course.query.get_or_404(course_id)
+    user_id = get_jwt_identity()
+
+    is_admin = False
+    has_access = False
+    
+    if user_id:
+        user = User.query.get(user_id)
+        if user and user.role == "admin":
+            is_admin = True
+            has_access = True  # Admins always have access
+        else:
+            # Check enrollment and payment for non-admin users
+            enrollment = Enrollment.query.filter_by(
+                user_id=user_id,
+                course_id=course.id,
+                status="active"
+            ).first()
+
+            if enrollment:
+                payment = (
+                    Payment.query.join(
+                        Enrollment, Enrollment.payment_reference == Payment.reference
+                    )
+                    .filter(
+                        Payment.user_id == user_id,
+                        Payment.status == "successful",
+                        Enrollment.course_id == course.id
+                    )
+                    .first()
+                )
+                if payment:
+                    has_access = True
 
     course_data = {
         "id": course.id,
@@ -510,6 +561,8 @@ def get_full_course(course_id):
         "total_lessons": course.total_lessons,
         "created_at": course.created_at.isoformat(),
         "image": course.image,
+        "has_access": has_access,  # ✅ Tell frontend if user has access
+        "is_admin": is_admin,      # ✅ Tell frontend if user is admin
         "sections": []
     }
 
@@ -529,14 +582,33 @@ def get_full_course(course_id):
                 "slug": lesson.slug,
                 "notes": lesson.notes,
                 "reference_link": lesson.reference_link,
-                "video_url": lesson.video_url,
-                "document_url": lesson.document_url,
                 "duration": format_duration(lesson.duration),
                 "size": format_size(lesson.size),
                 "created_at": lesson.created_at.isoformat(),
                 "quizzes": []
             }
 
+            # ✅ Only show video/document URLs if user has access (paid or admin)
+            if has_access:
+                if lesson.s3_video_key:
+                    # Generate presigned URL for S3 videos
+                    presigned_url = generate_presigned_url(lesson.s3_video_key, expiration=7200)
+                    lesson_data["video_url"] = presigned_url
+                else:
+                    lesson_data["video_url"] = lesson.video_url
+                
+                if lesson.s3_document_key:
+                    # Generate presigned URL for S3 documents
+                    presigned_url = generate_presigned_url(lesson.s3_document_key, expiration=7200)
+                    lesson_data["document_url"] = presigned_url
+                else:
+                    lesson_data["document_url"] = lesson.document_url
+            else:
+                # Free users see null URLs
+                lesson_data["video_url"] = None
+                lesson_data["document_url"] = None
+
+            # ✅ Include quizzes
             if hasattr(lesson, 'quizzes') and lesson.quizzes:
                 for quiz in lesson.quizzes:
                     lesson_data["quizzes"].append({
@@ -792,28 +864,38 @@ def get_lesson_details(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
     user_id = get_jwt_identity()
 
+    # ✅ Check if user is admin
+    is_admin = False
     has_access = False
-    if user_id:
-        enrollment = Enrollment.query.filter_by(
-            user_id=user_id,
-            course_id=lesson.section.course_id,
-            status="active"
-        ).first()
 
-        if enrollment:
-            payment = (
-                Payment.query.join(
-                    Enrollment, Enrollment.payment_reference == Payment.reference
+    if user_id:
+        from app.models.user import User
+        user = User.query.get(user_id)
+        if user and user.role == "admin":
+            is_admin = True
+            has_access = True  # Admins always have access
+        else:
+            # Check enrollment and payment for non-admin users
+            enrollment = Enrollment.query.filter_by(
+                user_id=user_id,
+                course_id=lesson.section.course_id,
+                status="active"
+            ).first()
+
+            if enrollment:
+                payment = (
+                    Payment.query.join(
+                        Enrollment, Enrollment.payment_reference == Payment.reference
+                    )
+                    .filter(
+                        Payment.user_id == user_id,
+                        Payment.status == "successful",
+                        Enrollment.course_id == lesson.section.course_id
+                    )
+                    .first()
                 )
-                .filter(
-                    Payment.user_id == user_id,
-                    Payment.status == "successful",
-                    Enrollment.course_id == lesson.section.course_id
-                )
-                .first()
-            )
-            if payment:
-                has_access = True
+                if payment:
+                    has_access = True
 
     lesson_data = {
         "id": lesson.id,
@@ -821,7 +903,11 @@ def get_lesson_details(lesson_id):
         "slug": lesson.slug,
         "notes": lesson.notes,
         "reference_link": lesson.reference_link,
+        "duration": format_duration(lesson.duration) if lesson.duration else "00:00:00",  # ✅ ADDED
+        "size": format_size(lesson.size) if lesson.size else "0 KB",  # ✅ ADDED
         "created_at": lesson.created_at.isoformat(),
+        "has_access": has_access,  # ✅ Tell frontend if user has access
+        "is_admin": is_admin,      # ✅ Tell frontend if user is admin
         "section": {
             "id": lesson.section.id,
             "name": lesson.section.name,
@@ -830,6 +916,7 @@ def get_lesson_details(lesson_id):
         "quizzes": []
     }
 
+    # ✅ Show video/document URLs if user has access (paid or admin)
     if has_access:
         if lesson.s3_video_key:
             presigned_url = generate_presigned_url(lesson.s3_video_key, expiration=7200)
@@ -845,8 +932,11 @@ def get_lesson_details(lesson_id):
     else:
         lesson_data["video_url"] = None
         lesson_data["document_url"] = None
-        lesson_data["access_denied"] = "Please enroll and complete payment to access this content"
+        # Only show access denied if user is logged in but not paid (and not admin)
+        if user_id and not is_admin:
+            lesson_data["access_denied"] = "Please enroll and complete payment to access this content"
 
+    # ✅ Include quizzes
     if hasattr(lesson, "quizzes") and lesson.quizzes:
         for quiz in lesson.quizzes:
             lesson_data["quizzes"].append({
@@ -854,6 +944,7 @@ def get_lesson_details(lesson_id):
                 "question": quiz.question,
                 "options": quiz.options,
                 "correct_answer": quiz.correct_answer,
+                "quiz_type": quiz.quiz_type,  # ✅ ADDED (was missing)
                 "explanation": quiz.explanation
             })
 
@@ -863,7 +954,7 @@ def get_lesson_details(lesson_id):
 @jwt_required()
 @role_required("admin")
 def delete_lesson(course_id, section_id, lesson_id):
-    
+
     lesson = Lesson.query.get_or_404(lesson_id)
     
     # Verify lesson belongs to the specified section and course
