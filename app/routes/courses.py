@@ -834,7 +834,12 @@ def create_lesson(course_id, section_id):
 @role_required("admin")
 def update_lesson(lesson_id):
     lesson = Lesson.query.get_or_404(lesson_id)
-    data = request.get_json()
+    
+    # Handle both form data and JSON
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        data = request.form.to_dict()
+    else:
+        data = request.get_json() or {}
 
     lesson.title = data.get("title", lesson.title)
     lesson.slug = slugify(lesson.title)
@@ -851,8 +856,8 @@ def update_lesson(lesson_id):
             "slug": lesson.slug,
             "video_url": lesson.video_url,
             "document_url": lesson.document_url,
-            "duration": format_duration(lesson.duration) if lesson.duration else None,
-            "size": format_size(lesson.size) if lesson.size else None,
+            "duration": format_duration(lesson.duration) if lesson.duration else "00:00:00",
+            "size": format_size(lesson.size) if lesson.size else "0 KB",
             "notes": lesson.notes,
             "reference_link": lesson.reference_link
         }
