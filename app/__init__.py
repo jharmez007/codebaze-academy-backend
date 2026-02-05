@@ -9,15 +9,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 def create_app():
     app = Flask(__name__, static_folder="../static")
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
-    CORS(app, resources={
-        r"/*": {
-            "origins": "*",
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-            "allow_headers": ["Content-Type", "Authorization"],
-            "expose_headers": ["Content-Type", "Authorization"],
-            "supports_credentials": True,
-        }
-    })
+    CORS(app, resources={r"/*": {"origins": "*"}})
     app.config.from_object(Config)
     
     # Initialize extensions
