@@ -833,158 +833,97 @@ def create_lesson(course_id, section_id):
 @jwt_required()
 @role_required("admin")
 def update_lesson(lesson_id):
-    """Update lesson metadata and optionally upload document to S3"""
     lesson = Lesson.query.get_or_404(lesson_id)
-    
-    # ✅ DEBUG: See what we're receiving
-    print(f"\n{'='*60}")
-    print(f"🔍 UPDATE LESSON #{lesson_id}")
-    print(f"{'='*60}")
-    print(f"Content-Type: {request.content_type}")
-    print(f"Form keys: {list(request.form.keys())}")
-    print(f"Form values: {dict(request.form)}")
-    print(f"Files: {list(request.files.keys())}")
-    print(f"{'='*60}\n")
-    
+
     data = {}
-    document_uploaded = False
-    
-    # Handle FormData (when document is uploaded or form fields sent)
-    if request.content_type and 'multipart/form-data' in request.content_type:
-        # ✅ Read all form fields into data dictionary
-        data = request.form.to_dict()
-        print(f"📦 Form data extracted: {data}")
-        
-        # Check if document file is present
-        document_file = request.files.get('document')
-        if document_file and document_file.filename:
-            print(f"📄 Document file detected: {document_file.filename}")
-            
-            # Validate file type
-            if document_file.content_type not in ALLOWED_DOC_TYPES:
-                return jsonify({"error": f"Invalid document type. Allowed: {ALLOWED_DOC_TYPES}"}), 400
-            
-            # Generate unique filename
-            file_extension = document_file.filename.rsplit('.', 1)[1].lower() if '.' in document_file.filename else 'pdf'
-            unique_filename = f"{uuid.uuid4()}.{file_extension}"
-            file_key = f"docs/{unique_filename}"
-            
-            # Create S3 client
-            s3_client = boto3.client(
-                's3',
-                aws_access_key_id=AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-                region_name=AWS_REGION
-            )
-            
+    document_file = None
+
+    # -------- HANDLE MULTIPART FORM --------
+    if request.content_type and "multipart/form-data" in request.content_type:
+        # If frontend sends JSON inside a "data" field
+        raw_data = request.form.get("data")
+        if raw_data:
             try:
-                print(f"📤 Uploading document {document_file.filename} to S3...")
-                
-                # Get file size
-                document_file.seek(0, os.SEEK_END)
-                file_size = document_file.tell()
-                document_file.seek(0)
-                
-                # Upload to S3
-                s3_client.upload_fileobj(
-                    document_file,
-                    AWS_S3_BUCKET_NAME,
-                    file_key,
-                    ExtraArgs={
-                        'ContentType': document_file.content_type,
-                        'ContentDisposition': f'attachment; filename="{secure_filename(document_file.filename)}"',
-                        'CacheControl': 'max-age=31536000',
-                        'Metadata': {
-                            'original-filename': secure_filename(document_file.filename)
-                        }
-                    }
-                )
-                
-                print(f"✅ Document uploaded successfully to {file_key}")
-                
-                # Delete old document if exists
-                if lesson.s3_document_key and lesson.s3_document_key != file_key:
-                    print(f"🗑️ Deleting old document: {lesson.s3_document_key}")
-                    delete_from_s3(lesson.s3_document_key)
-                
-                # Update lesson with new document
-                lesson.s3_document_key = file_key
-                lesson.document_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
-                document_uploaded = True
-                
-                print(f"💾 Document URL saved: {lesson.document_url}")
-                
-            except Exception as e:
-                print(f"❌ Error uploading document: {e}")
-                import traceback
-                traceback.print_exc()
-                return jsonify({"error": f"Failed to upload document: {str(e)}"}), 500
-    
-    # Handle JSON data
+                import json
+                data = json.loads(raw_data)
+            except Exception:
+                return jsonify({"error": "Invalid JSON in form field 'data'"}), 400
+        else:
+            # fallback: normal form fields
+            data = request.form.to_dict()
+
+        document_file = request.files.get("document")
+
+    # -------- HANDLE JSON BODY --------
     elif request.is_json:
         data = request.get_json() or {}
-        print(f"📦 JSON data extracted: {data}")
-    
-    # ✅ Update lesson metadata from form/JSON data
-    updated_fields = []
-    
-    # Update title
-    if "title" in data and data.get("title"):
-        old_title = lesson.title
-        lesson.title = data.get("title").strip()
-        lesson.slug = slugify(lesson.title)
-        updated_fields.append(f"title: '{old_title}' → '{lesson.title}'")
-        print(f"✏️ Title updated: {lesson.title}")
-    
-    # Update notes
-    if "notes" in data and data.get("notes") is not None:
-        old_notes = lesson.notes
-        lesson.notes = data.get("notes").strip()
-        updated_fields.append(f"notes: '{old_notes}' → '{lesson.notes}'")
-        print(f"✏️ Notes updated: {lesson.notes}")
-    
-    # Update reference_link with smart parsing
-    if "reference_link" in data and data.get("reference_link"):
-        old_ref = lesson.reference_link
-        ref_link = data.get("reference_link")
-        
-        # Handle if reference_link is sent as JSON string like ["url"]
-        if isinstance(ref_link, str):
-            ref_link = ref_link.strip()
-            # Check if it's a JSON array string
-            if ref_link.startswith('[') and ref_link.endswith(']'):
-                try:
-                    import json
-                    parsed = json.loads(ref_link)
-                    # Take first element if it's an array
-                    lesson.reference_link = parsed[0].strip() if parsed and len(parsed) > 0 else ""
-                    print(f"✏️ Reference link parsed from JSON array: {lesson.reference_link}")
-                except json.JSONDecodeError:
-                    # If parsing fails, use as-is
-                    lesson.reference_link = ref_link
-                    print(f"✏️ Reference link used as-is: {lesson.reference_link}")
-            else:
-                # Plain string
-                lesson.reference_link = ref_link
-                print(f"✏️ Reference link updated: {lesson.reference_link}")
-        elif isinstance(ref_link, list):
-            # If it's already a list, take first element
-            lesson.reference_link = ref_link[0].strip() if ref_link and len(ref_link) > 0 else ""
-            print(f"✏️ Reference link from list: {lesson.reference_link}")
-        else:
-            lesson.reference_link = str(ref_link).strip() if ref_link else ""
-            print(f"✏️ Reference link converted: {lesson.reference_link}")
-        
-        updated_fields.append(f"reference_link: '{old_ref}' → '{lesson.reference_link}'")
 
-    # Commit all changes
+    else:
+        return jsonify({"error": "Unsupported content type"}), 400
+
+    # -------- UPDATE METADATA --------
+    if "title" in data and data["title"]:
+        lesson.title = data["title"].strip()
+        lesson.slug = slugify(lesson.title)
+
+    if "notes" in data:
+        lesson.notes = (data.get("notes") or "").strip()
+
+    if "reference_link" in data:
+        ref = data.get("reference_link")
+
+        # Handle stringified JSON list like ["url"]
+        if isinstance(ref, str) and ref.startswith("["):
+            try:
+                import json
+                parsed = json.loads(ref)
+                lesson.reference_link = parsed[0].strip() if parsed else ""
+            except Exception:
+                lesson.reference_link = ref.strip()
+        elif isinstance(ref, list):
+            lesson.reference_link = ref[0].strip() if ref else ""
+        else:
+            lesson.reference_link = (ref or "").strip()
+
+    # -------- HANDLE DOCUMENT UPLOAD --------
+    if document_file and document_file.filename:
+        if document_file.content_type not in ALLOWED_DOC_TYPES:
+            return jsonify({"error": f"Invalid document type. Allowed: {ALLOWED_DOC_TYPES}"}), 400
+
+        file_extension = document_file.filename.rsplit('.', 1)[1].lower() if '.' in document_file.filename else 'pdf'
+        file_key = f"docs/{uuid.uuid4()}.{file_extension}"
+
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_REGION
+        )
+
+        try:
+            s3_client.upload_fileobj(
+                document_file,
+                AWS_S3_BUCKET_NAME,
+                file_key,
+                ExtraArgs={
+                    'ContentType': document_file.content_type,
+                    'ContentDisposition': f'attachment; filename="{secure_filename(document_file.filename)}"',
+                    'CacheControl': 'max-age=31536000'
+                }
+            )
+
+            # Delete old doc if exists
+            if lesson.s3_document_key:
+                delete_from_s3(lesson.s3_document_key)
+
+            lesson.s3_document_key = file_key
+            lesson.document_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
+
+        except Exception as e:
+            return jsonify({"error": f"S3 upload failed: {str(e)}"}), 500
+
+    # -------- SAVE CHANGES --------
     db.session.commit()
-    
-    print(f"\n✅ Lesson #{lesson_id} updated successfully")
-    print(f"📝 Updated fields: {', '.join(updated_fields) if updated_fields else 'None'}")
-    if document_uploaded:
-        print(f"📄 Document uploaded: {lesson.s3_document_key}")
-    print(f"{'='*60}\n")
 
     return jsonify({
         "message": "Lesson updated successfully",
