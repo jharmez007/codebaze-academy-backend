@@ -873,11 +873,11 @@ def update_lesson(lesson_id):
         ref = data.get("reference_link")
         links = []
 
-        # Case 1: Already a list
+        # If frontend sends real array
         if isinstance(ref, list):
             links = [str(link).strip() for link in ref if str(link).strip()]
 
-        # Case 2: JSON string like '["a.com","b.com"]'
+        # If frontend sends JSON string array: '["a.com","b.com"]'
         elif isinstance(ref, str) and ref.strip().startswith("["):
             try:
                 import json
@@ -885,14 +885,11 @@ def update_lesson(lesson_id):
                 if isinstance(parsed, list):
                     links = [str(link).strip() for link in parsed if str(link).strip()]
             except Exception:
-                pass
+                links = []
 
-        # Case 3: Single string link
+        # If frontend sends single string
         elif isinstance(ref, str) and ref.strip():
             links = [ref.strip()]
-
-        # Save as array
-        lesson.reference_link = links
     # -------- HANDLE DOCUMENT UPLOAD --------
     if document_file and document_file.filename:
         if document_file.content_type not in ALLOWED_DOC_TYPES:
@@ -933,7 +930,7 @@ def update_lesson(lesson_id):
     # -------- SAVE CHANGES --------
     db.session.commit()
 
-    reference_links_output = json.dumps(lesson.reference_link or [])
+    lesson.reference_link = json.dumps(links)
 
     return jsonify({
         "message": "Lesson updated successfully",
@@ -947,7 +944,7 @@ def update_lesson(lesson_id):
             "duration": format_duration(lesson.duration) if lesson.duration else "00:00:00",
             "size": format_size(lesson.size) if lesson.size else "0 KB",
             "notes": lesson.notes,
-            "reference_link": reference_links_output
+            "reference_link": lesson.reference_link
         }
     }), 200
 
