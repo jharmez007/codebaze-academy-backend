@@ -10,6 +10,17 @@ def create_app():
     app = Flask(__name__, static_folder="../static")
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
     CORS(app, resources={r"/*": {"origins": "*"}})
+
+    # CORS(app, 
+    #      resources={r"/*": {
+    #          "origins": ["https://www.codebazeacademy.com", "http://localhost:3000"],  # Specify exact origins
+    #          "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    #          "allow_headers": ["Content-Type", "Authorization"],
+    #          "expose_headers": ["Content-Type", "Authorization"],
+    #          "supports_credentials": True,
+    #          "max_age": 3600
+    #      }}
+    # )
     app.config.from_object(Config)
     
     # Initialize extensions

@@ -906,16 +906,43 @@ def update_lesson(lesson_id):
     else:
         data = request.get_json() or {}
     
-    # Update lesson metadata
+    # ✅ Update lesson metadata with better parsing
     if "title" in data:
         lesson.title = data.get("title")
         lesson.slug = slugify(lesson.title)
+        print(f"📝 Updated title: {lesson.title}")
     
     if "notes" in data:
         lesson.notes = data.get("notes")
+        print(f"📝 Updated notes: {lesson.notes}")
     
     if "reference_link" in data:
-        lesson.reference_link = data.get("reference_link")
+        ref_link = data.get("reference_link")
+        
+        # ✅ Handle if reference_link is sent as JSON string like ["url"]
+        if isinstance(ref_link, str):
+            # Check if it's a JSON array string
+            if ref_link.startswith('[') and ref_link.endswith(']'):
+                try:
+                    import json
+                    parsed = json.loads(ref_link)
+                    # Take first element if it's an array
+                    lesson.reference_link = parsed[0] if parsed and len(parsed) > 0 else ""
+                    print(f"📝 Parsed reference_link from JSON: {lesson.reference_link}")
+                except json.JSONDecodeError:
+                    # If parsing fails, use as-is
+                    lesson.reference_link = ref_link
+                    print(f"📝 Using reference_link as-is: {lesson.reference_link}")
+            else:
+                # Plain string
+                lesson.reference_link = ref_link
+                print(f"📝 Updated reference_link: {lesson.reference_link}")
+        elif isinstance(ref_link, list):
+            # If it's already a list, take first element
+            lesson.reference_link = ref_link[0] if ref_link and len(ref_link) > 0 else ""
+            print(f"📝 Updated reference_link from list: {lesson.reference_link}")
+        else:
+            lesson.reference_link = str(ref_link) if ref_link else ""
 
     db.session.commit()
 
@@ -926,8 +953,8 @@ def update_lesson(lesson_id):
             "title": lesson.title,
             "slug": lesson.slug,
             "video_url": lesson.video_url,
-            "document_url": lesson.document_url,  # ✅ Returns S3 document URL
-            "s3_document_key": lesson.s3_document_key,  # ✅ Returns S3 key
+            "document_url": lesson.document_url,
+            "s3_document_key": lesson.s3_document_key,
             "duration": format_duration(lesson.duration) if lesson.duration else "00:00:00",
             "size": format_size(lesson.size) if lesson.size else "0 KB",
             "notes": lesson.notes,
