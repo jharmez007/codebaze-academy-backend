@@ -836,13 +836,30 @@ def update_lesson(lesson_id):
     """Update lesson metadata and optionally upload document to S3"""
     lesson = Lesson.query.get_or_404(lesson_id)
     
-    # Handle FormData (when document is uploaded)
+    # ✅ DEBUG: See what we're receiving
+    print(f"\n{'='*60}")
+    print(f"🔍 UPDATE LESSON #{lesson_id}")
+    print(f"{'='*60}")
+    print(f"Content-Type: {request.content_type}")
+    print(f"Form keys: {list(request.form.keys())}")
+    print(f"Form values: {dict(request.form)}")
+    print(f"Files: {list(request.files.keys())}")
+    print(f"{'='*60}\n")
+    
+    data = {}
+    document_uploaded = False
+    
+    # Handle FormData (when document is uploaded or form fields sent)
     if request.content_type and 'multipart/form-data' in request.content_type:
+        # ✅ Read all form fields into data dictionary
         data = request.form.to_dict()
+        print(f"📦 Form data extracted: {data}")
         
         # Check if document file is present
         document_file = request.files.get('document')
         if document_file and document_file.filename:
+            print(f"📄 Document file detected: {document_file.filename}")
+            
             # Validate file type
             if document_file.content_type not in ALLOWED_DOC_TYPES:
                 return jsonify({"error": f"Invalid document type. Allowed: {ALLOWED_DOC_TYPES}"}), 400
@@ -893,6 +910,7 @@ def update_lesson(lesson_id):
                 # Update lesson with new document
                 lesson.s3_document_key = file_key
                 lesson.document_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
+                document_uploaded = True
                 
                 print(f"💾 Document URL saved: {lesson.document_url}")
                 
@@ -903,48 +921,70 @@ def update_lesson(lesson_id):
                 return jsonify({"error": f"Failed to upload document: {str(e)}"}), 500
     
     # Handle JSON data
-    else:
+    elif request.is_json:
         data = request.get_json() or {}
+        print(f"📦 JSON data extracted: {data}")
     
-    # ✅ Update lesson metadata with better parsing
-    if "title" in data:
-        lesson.title = data.get("title")
+    # ✅ Update lesson metadata from form/JSON data
+    updated_fields = []
+    
+    # Update title
+    if "title" in data and data.get("title"):
+        old_title = lesson.title
+        lesson.title = data.get("title").strip()
         lesson.slug = slugify(lesson.title)
-        print(f"📝 Updated title: {lesson.title}")
+        updated_fields.append(f"title: '{old_title}' → '{lesson.title}'")
+        print(f"✏️ Title updated: {lesson.title}")
     
-    if "notes" in data:
-        lesson.notes = data.get("notes")
-        print(f"📝 Updated notes: {lesson.notes}")
+    # Update notes
+    if "notes" in data and data.get("notes") is not None:
+        old_notes = lesson.notes
+        lesson.notes = data.get("notes").strip()
+        updated_fields.append(f"notes: '{old_notes}' → '{lesson.notes}'")
+        print(f"✏️ Notes updated: {lesson.notes}")
     
-    if "reference_link" in data:
+    # Update reference_link with smart parsing
+    if "reference_link" in data and data.get("reference_link"):
+        old_ref = lesson.reference_link
         ref_link = data.get("reference_link")
         
-        # ✅ Handle if reference_link is sent as JSON string like ["url"]
+        # Handle if reference_link is sent as JSON string like ["url"]
         if isinstance(ref_link, str):
+            ref_link = ref_link.strip()
             # Check if it's a JSON array string
             if ref_link.startswith('[') and ref_link.endswith(']'):
                 try:
                     import json
                     parsed = json.loads(ref_link)
                     # Take first element if it's an array
-                    lesson.reference_link = parsed[0] if parsed and len(parsed) > 0 else ""
-                    print(f"📝 Parsed reference_link from JSON: {lesson.reference_link}")
+                    lesson.reference_link = parsed[0].strip() if parsed and len(parsed) > 0 else ""
+                    print(f"✏️ Reference link parsed from JSON array: {lesson.reference_link}")
                 except json.JSONDecodeError:
                     # If parsing fails, use as-is
                     lesson.reference_link = ref_link
-                    print(f"📝 Using reference_link as-is: {lesson.reference_link}")
+                    print(f"✏️ Reference link used as-is: {lesson.reference_link}")
             else:
                 # Plain string
                 lesson.reference_link = ref_link
-                print(f"📝 Updated reference_link: {lesson.reference_link}")
+                print(f"✏️ Reference link updated: {lesson.reference_link}")
         elif isinstance(ref_link, list):
             # If it's already a list, take first element
-            lesson.reference_link = ref_link[0] if ref_link and len(ref_link) > 0 else ""
-            print(f"📝 Updated reference_link from list: {lesson.reference_link}")
+            lesson.reference_link = ref_link[0].strip() if ref_link and len(ref_link) > 0 else ""
+            print(f"✏️ Reference link from list: {lesson.reference_link}")
         else:
-            lesson.reference_link = str(ref_link) if ref_link else ""
+            lesson.reference_link = str(ref_link).strip() if ref_link else ""
+            print(f"✏️ Reference link converted: {lesson.reference_link}")
+        
+        updated_fields.append(f"reference_link: '{old_ref}' → '{lesson.reference_link}'")
 
+    # Commit all changes
     db.session.commit()
+    
+    print(f"\n✅ Lesson #{lesson_id} updated successfully")
+    print(f"📝 Updated fields: {', '.join(updated_fields) if updated_fields else 'None'}")
+    if document_uploaded:
+        print(f"📄 Document uploaded: {lesson.s3_document_key}")
+    print(f"{'='*60}\n")
 
     return jsonify({
         "message": "Lesson updated successfully",
