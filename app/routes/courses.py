@@ -933,6 +933,8 @@ def update_lesson(lesson_id):
     # -------- SAVE CHANGES --------
     db.session.commit()
 
+    reference_links_output = json.dumps(lesson.reference_link or [])
+
     return jsonify({
         "message": "Lesson updated successfully",
         "lesson": {
@@ -945,7 +947,7 @@ def update_lesson(lesson_id):
             "duration": format_duration(lesson.duration) if lesson.duration else "00:00:00",
             "size": format_size(lesson.size) if lesson.size else "0 KB",
             "notes": lesson.notes,
-            "reference_link": lesson.reference_link
+            "reference_link": reference_links_output
         }
     }), 200
 
