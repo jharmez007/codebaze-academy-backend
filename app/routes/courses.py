@@ -698,38 +698,37 @@ def update_course(course_id):
         course.image = f"/static/uploads/images/{filename}"
 
     # -------- HANDLE SECTIONS & LESSONS --------
-    sections_data = data.get("sections", [])
+    sections_data = json.loads(request.form.get("sections", "[]"))
 
     for sec_data in sections_data:
-        section_id = sec_data.get("id")
-
-        # EXISTING SECTION
-        if section_id:
-            section = Section.query.filter_by(id=section_id, course_id=course.id).first()
+        # ---------------- SECTION ----------------
+        if sec_data.get("id"):
+            section = Section.query.filter_by(id=sec_data["id"], course_id=course.id).first()
             if not section:
-                continue  # Skip invalid IDs
+                continue
         else:
-            # NEW SECTION
             section = Section(course_id=course.id)
             db.session.add(section)
 
         section.name = sec_data.get("name", section.name)
         section.description = sec_data.get("description", section.description)
 
-        # Ensure slug is never null
         if section.name:
             section.slug = slugify(section.name)
-                # -------- LESSONS --------
+
+        # 🔥 CRITICAL: get section.id before adding lessons
+        db.session.flush()
+
+        # ---------------- LESSONS ----------------
         lessons_data = sec_data.get("lessons", [])
         for les_data in lessons_data:
-            lesson_id = les_data.get("id")
 
-            if lesson_id:
-                lesson = Lesson.query.filter_by(id=lesson_id, section_id=section.id).first()
+            if les_data.get("id"):
+                lesson = Lesson.query.filter_by(id=les_data["id"], section_id=section.id).first()
                 if not lesson:
                     continue
             else:
-                lesson = Lesson(section_id=section.id)
+                lesson = Lesson(section_id=section.id)  # ✅ ATTACH HERE
                 db.session.add(lesson)
 
             lesson.title = les_data.get("title", lesson.title)
