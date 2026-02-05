@@ -669,20 +669,67 @@ def create_course():
 @role_required("admin")
 def update_course(course_id):
     course = Course.query.get_or_404(course_id)
-    data = request.form.to_dict()
 
+    # -------- PARSE DATA --------
+    if request.content_type and "multipart/form-data" in request.content_type:
+        raw_data = request.form.get("data")
+        if not raw_data:
+            return jsonify({"error": "Missing 'data' payload"}), 400
+        import json
+        data = json.loads(raw_data)
+    elif request.is_json:
+        data = request.get_json()
+    else:
+        return jsonify({"error": "Unsupported content type"}), 400
+
+    # -------- UPDATE COURSE FIELDS --------
     course.title = data.get("title", course.title)
     course.description = data.get("description", course.description)
     course.long_description = data.get("long_description", course.long_description)
     course.price = data.get("price", course.price)
     course.is_published = data.get("is_published", course.is_published)
 
+    # -------- HANDLE COURSE IMAGE --------
     image_file = request.files.get("image")
     if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
         filename = secure_filename(image_file.filename)
         image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
         image_file.save(image_path)
         course.image = f"/static/uploads/images/{filename}"
+
+    # -------- HANDLE SECTIONS & LESSONS --------
+    sections_data = data.get("sections", [])
+
+    for sec_data in sections_data:
+        section_id = sec_data.get("id")
+
+        # EXISTING SECTION
+        if section_id:
+            section = Section.query.filter_by(id=section_id, course_id=course.id).first()
+            if not section:
+                continue  # Skip invalid IDs
+        else:
+            # NEW SECTION
+            section = Section(course_id=course.id)
+            db.session.add(section)
+
+        section.name = sec_data.get("name", section.name)
+        section.description = sec_data.get("description", section.description)
+
+        # -------- LESSONS --------
+        lessons_data = sec_data.get("lessons", [])
+        for les_data in lessons_data:
+            lesson_id = les_data.get("id")
+
+            if lesson_id:
+                lesson = Lesson.query.filter_by(id=lesson_id, section_id=section.id).first()
+                if not lesson:
+                    continue
+            else:
+                lesson = Lesson(section_id=section.id)
+                db.session.add(lesson)
+
+            lesson.title = les_data.get("title", lesson.title)
 
     db.session.commit()
 
