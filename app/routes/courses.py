@@ -367,7 +367,7 @@ def confirm_upload():
     }), 200
 
 # List all published courses
-@bp.route("/", methods=["GET"])
+@bp.route("/", methods=["GET", "OPTIONS"])
 def list_courses():
     user_currency = detect_currency()
     courses = Course.query.filter_by(is_published=True).all()
@@ -829,22 +829,93 @@ def create_lesson(course_id, section_id):
     }), 201
 
 # MODIFIED: Update lesson metadata only
-@bp.route("/lessons/<int:lesson_id>", methods=["PUT"])
+@bp.route("/lessons/<int:lesson_id>", methods=["PUT", "OPTIONS"])
 @jwt_required()
 @role_required("admin")
 def update_lesson(lesson_id):
+    """Update lesson metadata and optionally upload document to S3"""
     lesson = Lesson.query.get_or_404(lesson_id)
     
-    # Handle both form data and JSON
+    # Handle FormData (when document is uploaded)
     if request.content_type and 'multipart/form-data' in request.content_type:
         data = request.form.to_dict()
+        
+        # Check if document file is present
+        document_file = request.files.get('document')
+        if document_file and document_file.filename:
+            # Validate file type
+            if document_file.content_type not in ALLOWED_DOC_TYPES:
+                return jsonify({"error": f"Invalid document type. Allowed: {ALLOWED_DOC_TYPES}"}), 400
+            
+            # Generate unique filename
+            file_extension = document_file.filename.rsplit('.', 1)[1].lower() if '.' in document_file.filename else 'pdf'
+            unique_filename = f"{uuid.uuid4()}.{file_extension}"
+            file_key = f"docs/{unique_filename}"
+            
+            # Create S3 client
+            s3_client = boto3.client(
+                's3',
+                aws_access_key_id=AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+                region_name=AWS_REGION
+            )
+            
+            try:
+                print(f"📤 Uploading document {document_file.filename} to S3...")
+                
+                # Get file size
+                document_file.seek(0, os.SEEK_END)
+                file_size = document_file.tell()
+                document_file.seek(0)
+                
+                # Upload to S3
+                s3_client.upload_fileobj(
+                    document_file,
+                    AWS_S3_BUCKET_NAME,
+                    file_key,
+                    ExtraArgs={
+                        'ContentType': document_file.content_type,
+                        'ContentDisposition': f'attachment; filename="{secure_filename(document_file.filename)}"',
+                        'CacheControl': 'max-age=31536000',
+                        'Metadata': {
+                            'original-filename': secure_filename(document_file.filename)
+                        }
+                    }
+                )
+                
+                print(f"✅ Document uploaded successfully to {file_key}")
+                
+                # Delete old document if exists
+                if lesson.s3_document_key and lesson.s3_document_key != file_key:
+                    print(f"🗑️ Deleting old document: {lesson.s3_document_key}")
+                    delete_from_s3(lesson.s3_document_key)
+                
+                # Update lesson with new document
+                lesson.s3_document_key = file_key
+                lesson.document_url = f"https://{AWS_S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
+                
+                print(f"💾 Document URL saved: {lesson.document_url}")
+                
+            except Exception as e:
+                print(f"❌ Error uploading document: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({"error": f"Failed to upload document: {str(e)}"}), 500
+    
+    # Handle JSON data
     else:
         data = request.get_json() or {}
-
-    lesson.title = data.get("title", lesson.title)
-    lesson.slug = slugify(lesson.title)
-    lesson.notes = data.get("notes", lesson.notes)
-    lesson.reference_link = data.get("reference_link", lesson.reference_link)
+    
+    # Update lesson metadata
+    if "title" in data:
+        lesson.title = data.get("title")
+        lesson.slug = slugify(lesson.title)
+    
+    if "notes" in data:
+        lesson.notes = data.get("notes")
+    
+    if "reference_link" in data:
+        lesson.reference_link = data.get("reference_link")
 
     db.session.commit()
 
@@ -855,7 +926,8 @@ def update_lesson(lesson_id):
             "title": lesson.title,
             "slug": lesson.slug,
             "video_url": lesson.video_url,
-            "document_url": lesson.document_url,
+            "document_url": lesson.document_url,  # ✅ Returns S3 document URL
+            "s3_document_key": lesson.s3_document_key,  # ✅ Returns S3 key
             "duration": format_duration(lesson.duration) if lesson.duration else "00:00:00",
             "size": format_size(lesson.size) if lesson.size else "0 KB",
             "notes": lesson.notes,
