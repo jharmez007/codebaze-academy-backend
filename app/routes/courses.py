@@ -733,6 +733,8 @@ def update_course(course_id):
                 db.session.add(lesson)
 
             lesson.title = les_data.get("title", lesson.title)
+            if lesson.title:
+                lesson.slug = slugify(lesson.title)
 
     db.session.commit()
 
