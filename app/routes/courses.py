@@ -890,6 +890,8 @@ def update_lesson(lesson_id):
         # If frontend sends single string
         elif isinstance(ref, str) and ref.strip():
             links = [ref.strip()]
+
+        lesson.reference_link = json.dumps(links)
     # -------- HANDLE DOCUMENT UPLOAD --------
     if document_file and document_file.filename:
         if document_file.content_type not in ALLOWED_DOC_TYPES:
@@ -928,12 +930,8 @@ def update_lesson(lesson_id):
             return jsonify({"error": f"S3 upload failed: {str(e)}"}), 500
 
     # -------- SAVE CHANGES --------
-    print("BEFORE COMMIT:", lesson.reference_link)
     db.session.commit()
-    db.session.refresh(lesson)
-    print("AFTER COMMIT:", lesson.reference_link)
 
-    lesson.reference_link = json.dumps(links)
 
     return jsonify({
         "message": "Lesson updated successfully",
