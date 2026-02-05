@@ -871,20 +871,28 @@ def update_lesson(lesson_id):
 
     if "reference_link" in data:
         ref = data.get("reference_link")
+        links = []
 
-        # Handle stringified JSON list like ["url"]
-        if isinstance(ref, str) and ref.startswith("["):
+        # Case 1: Already a list
+        if isinstance(ref, list):
+            links = [str(link).strip() for link in ref if str(link).strip()]
+
+        # Case 2: JSON string like '["a.com","b.com"]'
+        elif isinstance(ref, str) and ref.strip().startswith("["):
             try:
                 import json
                 parsed = json.loads(ref)
-                lesson.reference_link = parsed[0].strip() if parsed else ""
+                if isinstance(parsed, list):
+                    links = [str(link).strip() for link in parsed if str(link).strip()]
             except Exception:
-                lesson.reference_link = ref.strip()
-        elif isinstance(ref, list):
-            lesson.reference_link = ref[0].strip() if ref else ""
-        else:
-            lesson.reference_link = (ref or "").strip()
+                pass
 
+        # Case 3: Single string link
+        elif isinstance(ref, str) and ref.strip():
+            links = [ref.strip()]
+
+        # Save as array
+        lesson.reference_link = links
     # -------- HANDLE DOCUMENT UPLOAD --------
     if document_file and document_file.filename:
         if document_file.content_type not in ALLOWED_DOC_TYPES:
