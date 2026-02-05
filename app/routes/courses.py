@@ -716,7 +716,10 @@ def update_course(course_id):
         section.name = sec_data.get("name", section.name)
         section.description = sec_data.get("description", section.description)
 
-        # -------- LESSONS --------
+        # Ensure slug is never null
+        if section.name:
+            section.slug = slugify(section.name)
+                # -------- LESSONS --------
         lessons_data = sec_data.get("lessons", [])
         for les_data in lessons_data:
             lesson_id = les_data.get("id")
