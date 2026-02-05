@@ -367,7 +367,7 @@ def confirm_upload():
     }), 200
 
 # List all published courses
-@bp.route("/", methods=["GET", "OPTIONS"])
+@bp.route("/", methods=["GET"])
 def list_courses():
     user_currency = detect_currency()
     courses = Course.query.filter_by(is_published=True).all()
@@ -829,7 +829,7 @@ def create_lesson(course_id, section_id):
     }), 201
 
 # MODIFIED: Update lesson metadata only
-@bp.route("/lessons/<int:lesson_id>", methods=["PUT", "OPTIONS"])
+@bp.route("/lessons/<int:lesson_id>", methods=["PUT"])
 @jwt_required()
 @role_required("admin")
 def update_lesson(lesson_id):
