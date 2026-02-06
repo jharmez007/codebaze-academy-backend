@@ -670,176 +670,145 @@ def create_course():
 def update_course(course_id):
     course = Course.query.get_or_404(course_id)
 
-    # -------- PARSE DATA --------
-    if request.content_type and "multipart/form-data" in request.content_type:
-        raw_data = request.form.get("data")
-        if not raw_data:
-            return jsonify({"error": "Missing 'data' payload"}), 400
-        import json
+    raw_data = request.form.get("data")
+    if not raw_data:
+        return jsonify({"error": "Missing course data"}), 400
+
+    try:
         data = json.loads(raw_data)
-    elif request.is_json:
-        data = request.get_json()
-    else:
-        return jsonify({"error": "Unsupported content type"}), 400
+    except:
+        return jsonify({"error": "Invalid JSON format"}), 400
 
-    # -------- UPDATE COURSE FIELDS --------
-    course.title = data.get("title", course.title)
+    # ✅ Update base fields
+    new_title = data.get("title", course.title)
+    course.title = new_title
+    course.slug = slugify(new_title)  # ✅ Always update slug to match title/topic
     course.description = data.get("description", course.description)
-    course.long_description = data.get("long_description", course.long_description)
     course.price = data.get("price", course.price)
-    course.is_published = data.get("is_published", course.is_published)
+    course.long_description = data.get("long_description", course.long_description)
 
-    # -------- HANDLE COURSE IMAGE --------
+    # ✅ Handle new course image if uploaded
     image_file = request.files.get("image")
     if image_file and allowed_file(image_file.filename, ALLOWED_IMG_EXT):
         filename = secure_filename(image_file.filename)
         image_path = os.path.join(UPLOAD_IMAGE_FOLDER, filename)
         image_file.save(image_path)
-        course.image = f"/static/uploads/images/{filename}"
+        course.image = image_path
 
-    # -------- HANDLE SECTIONS & LESSONS --------
-    sections_data = json.loads(request.form.get("sections", "[]"))
-
-    for sec_data in sections_data:
-        # ---------------- SECTION ----------------
-        if sec_data.get("id"):
-            section = Section.query.filter_by(id=sec_data["id"], course_id=course.id).first()
-            if not section:
+    # ✅ Handle sections & lessons
+    sections_data = data.get("sections", [])
+    for i, sub in enumerate(sections_data):
+        section_id = sub.get("id")
+        if section_id:
+            section = Section.query.filter_by(id=section_id, course_id=course.id).first()
+            if section:
+                section.name = sub.get("name", section.name)
+                section.slug = slugify(section.name)  # ✅ keep section slug updated
+                section.description = sub.get("description", section.description)
+            else:
                 continue
         else:
-            section = Section(course_id=course.id)
+            section = Section(
+                name=sub["name"],
+                slug=slugify(sub["name"]),
+                description=sub.get("description", ""),
+                course=course
+            )
             db.session.add(section)
 
-        section.name = sec_data.get("name", section.name)
-        section.description = sec_data.get("description", section.description)
-
-        if section.name:
-            section.slug = slugify(section.name)
-
-        # 🔥 CRITICAL: get section.id before adding lessons
-        db.session.flush()
-
-        # ---------------- LESSONS ----------------
-        lessons_data = sec_data.get("lessons", [])
-        for les_data in lessons_data:
-
-            if les_data.get("id"):
-                lesson = Lesson.query.filter_by(id=les_data["id"], section_id=section.id).first()
-                if not lesson:
+        # ✅ Handle lessons
+        for j, lesson_data in enumerate(sub.get("lessons", [])):
+            lesson_id = lesson_data.get("id")
+            if lesson_id:
+                lesson = Lesson.query.filter_by(id=lesson_id, section_id=section.id).first()
+                if lesson:
+                    lesson.title = lesson_data.get("title", lesson.title)
+                    lesson.slug = slugify(lesson.title)  # ✅ keep lesson slug updated
+                    lesson.notes = lesson_data.get("notes", lesson.notes)
+                    lesson.reference_link = lesson_data.get("reference_link", lesson.reference_link)
+                else:
                     continue
             else:
-                lesson = Lesson(section_id=section.id)  # ✅ ATTACH HERE
+                video_file = request.files.get(f"sub_{i}_lesson_{j}_video")
+                doc_file = request.files.get(f"sub_{i}_lesson_{j}_doc")
+
+                video_path, doc_path, duration, size = None, None, None, None
+
+                if video_file and allowed_file(video_file.filename, ALLOWED_VIDEO_EXT):
+                    filename = secure_filename(video_file.filename)
+                    video_path = os.path.join(UPLOAD_VIDEO_FOLDER, filename)
+                    video_file.save(video_path)
+                    duration, size = get_video_metadata(video_path)
+
+                if doc_file and allowed_file(doc_file.filename, ALLOWED_DOC_EXT):
+                    filename = secure_filename(doc_file.filename)
+                    doc_path = os.path.join(UPLOAD_DOC_FOLDER, filename)
+                    doc_file.save(doc_path)
+
+                lesson = Lesson(
+                    title=lesson_data["title"],
+                    slug=slugify(lesson_data["title"]),
+                    notes=lesson_data.get("notes"),
+                    reference_link=lesson_data.get("reference_link"),
+                    video_url=video_path,
+                    document_url=doc_path,
+                    duration=duration,
+                    size=size,
+                    section=section
+                )
                 db.session.add(lesson)
 
-            lesson.title = les_data.get("title", lesson.title)
-            if lesson.title:
-                lesson.slug = slugify(lesson.title)
-
     db.session.commit()
 
-    return jsonify({
-        "message": "Course updated successfully",
-        "course": {
-            "id": course.id,
-            "title": course.title,
-            "description": course.description,
-            "price": course.price,
-            "is_published": course.is_published
-        }
-    }), 200
+    return jsonify({"message": "✅ Course and related data updated successfully"}), 200
 
-@bp.route("/<int:course_id>", methods=["DELETE"])
-@jwt_required()
-@role_required("admin")
-def delete_course(course_id):
-    course = Course.query.get_or_404(course_id)
-    
-    for section in course.sections:
-        for lesson in section.lessons:
-            if lesson.s3_video_key:
-                delete_from_s3(lesson.s3_video_key)
-            if lesson.s3_document_key:
-                delete_from_s3(lesson.s3_document_key)
-    
-    db.session.delete(course)
-    db.session.commit()
 
-    return jsonify({"message": "Course deleted successfully"}), 200
-
-@bp.route("/<int:course_id>/sections", methods=["POST"])
-@jwt_required()
-@role_required("admin")
-def create_section(course_id):
-    course = Course.query.get_or_404(course_id)
-    data = request.get_json()
-
-    if not data or not data.get("name"):
-        return jsonify({"error": "Section name is required"}), 400
-
-    new_section = Section(
-        name=data.get("name"),
-        slug=slugify(data.get("name")),
-        description=data.get("description", ""),
-        course=course
-    )
-    db.session.add(new_section)
-    db.session.commit()
-
-    return jsonify({
-        "message": "Section created successfully",
-        "section": {
-            "id": new_section.id,
-            "name": new_section.name,
-            "slug": new_section.slug,
-            "description": new_section.description
-        }
-    }), 201
-
-@bp.route("/<int:course_id>/sections/<int:section_id>", methods=["PUT"])
-@jwt_required()
-@role_required("admin")
-def update_section(course_id, section_id):
-    section = Section.query.get_or_404(section_id)
-
-    if section.course_id != course_id:
-        return jsonify({"error": "Section does not belong to this course"}), 400
-
-    data = request.get_json()
-    section.name = data.get("name", section.name)
-    section.description = data.get("description", section.description)
-    section.slug = slugify(section.name)
-
-    db.session.commit()
-
-    return jsonify({
-        "message": "Section updated successfully",
-        "section": {
-            "id": section.id,
-            "name": section.name,
-            "slug": section.slug,
-            "description": section.description
-        }
-    }), 200
-
+# Delete a Section and all its Lessons
 @bp.route("/<int:course_id>/sections/<int:section_id>", methods=["DELETE"])
 @jwt_required()
 @role_required("admin")
 def delete_section(course_id, section_id):
-    section = Section.query.get_or_404(section_id)
+    course = Course.query.get_or_404(course_id)
+    section = Section.query.filter_by(id=section_id, course_id=course.id).first()
 
-    if section.course_id != course_id:
-        return jsonify({"error": "Section does not belong to this course"}), 400
-    
-    for lesson in section.lessons:
-        if lesson.s3_video_key:
-            delete_from_s3(lesson.s3_video_key)
-        if lesson.s3_document_key:
-            delete_from_s3(lesson.s3_document_key)
+    if not section:
+        return jsonify({"error": "Section not found"}), 404
 
+    # Deleting section will also delete lessons if cascade is set in the model
     db.session.delete(section)
     db.session.commit()
 
-    return jsonify({"message": "Section deleted successfully"}), 200
+    return jsonify({
+        "message": "Section deleted successfully",
+        "section_id": section_id,
+        "course_id": course_id
+    }), 200
+
+
+# Delete a single Lesson
+# @bp.route("/<int:course_id>/sections/<int:section_id>/lessons/<int:lesson_id>", methods=["DELETE"])
+# @jwt_required()
+# @role_required("admin")
+# def delete_lesson(course_id, section_id, lesson_id):
+#     course = Course.query.get_or_404(course_id)
+#     section = Section.query.filter_by(id=section_id, course_id=course.id).first()
+#     if not section:
+#         return jsonify({"error": "Section not found"}), 404
+
+#     lesson = Lesson.query.filter_by(id=lesson_id, section_id=section.id).first()
+#     if not lesson:
+#         return jsonify({"error": "Lesson not found"}), 404
+
+#     db.session.delete(lesson)
+#     db.session.commit()
+
+#     return jsonify({
+#         "message": "Lesson deleted successfully",
+#         "lesson_id": lesson_id,
+#         "section_id": section_id,
+#         "course_id": course_id
+#     }), 200
+
 
 @bp.route("/<int:course_id>/sections/<int:section_id>/lessons", methods=["POST"])
 @jwt_required()
