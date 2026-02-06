@@ -98,9 +98,10 @@ def initiate_payment():
 
     if currency == "USD":
         final_amount = convert_ngn_to_usd(amount)
+
     payload = {
         "email": email,
-        "amount": int(final_amount * 100),  # convert to kobo correctly
+        "amount": int(final_amount * 100),  # Paystack expects smallest currency unit
         "currency": currency,
         "callback_url": "https://cba.jumpingcrab.com/payments/verify",
         "metadata": {
@@ -112,6 +113,10 @@ def initiate_payment():
             "redirect_url": f"https://codebazeacademy.com/checkout/{slug}"
         }
     }
+
+    # ✅ Add channels ONLY for USD payments
+    if currency == "USD":
+        payload["channels"] = ["card"]
 
     response = requests.post(
         f"{PAYSTACK_BASE_URL}/transaction/initialize",
