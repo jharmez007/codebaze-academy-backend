@@ -65,6 +65,112 @@ def format_size(bytes_size):
         bytes_size /= 1024.0
     return f"{bytes_size:.2f} TB"
 
+def trigger_hls_transcode(source_key, lesson_id):
+    """Convert uploaded video to HLS adaptive streaming format"""
+    mediaconvert = boto3.client(
+        'mediaconvert',
+        region_name=AWS_REGION,
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        endpoint_url=os.getenv('MEDIACONVERT_ENDPOINT') 
+    )
+
+    input_url = f"s3://{AWS_S3_BUCKET_NAME}/{source_key}"
+    output_prefix = f"s3://{AWS_S3_BUCKET_NAME}/hls/lesson_{lesson_id}/"
+
+    job_settings = {
+        "Inputs": [{
+            "FileInput": input_url,
+            "AudioSelectors": {"Audio Selector 1": {"DefaultSelection": "DEFAULT"}},
+            "VideoSelector": {}
+        }],
+        "OutputGroups": [{
+            "Name": "Apple HLS",
+            "OutputGroupSettings": {
+                "Type": "HLS_GROUP_SETTINGS",
+                "HlsGroupSettings": {
+                    "Destination": output_prefix,
+                    "SegmentLength": 6,
+                    "MinSegmentLength": 0
+                }
+            },
+            "Outputs": [
+                # 1080p tier
+                {
+                    "NameModifier": "_1080p",
+                    "VideoDescription": {
+                        "Width": 1920, "Height": 1080,
+                        "CodecSettings": {
+                            "Codec": "H_264",
+                            "H264Settings": {
+                                "Bitrate": 4000000,
+                                "RateControlMode": "CBR",
+                                "CodecProfile": "HIGH"
+                            }
+                        }
+                    },
+                    "AudioDescriptions": [{"CodecSettings": {"Codec": "AAC", "AacSettings": {"Bitrate": 128000}}}],
+                    "ContainerSettings": {"Container": "M3U8"}
+                },
+                # 720p tier
+                {
+                    "NameModifier": "_720p",
+                    "VideoDescription": {
+                        "Width": 1280, "Height": 720,
+                        "CodecSettings": {
+                            "Codec": "H_264",
+                            "H264Settings": {
+                                "Bitrate": 2000000,
+                                "RateControlMode": "CBR"
+                            }
+                        }
+                    },
+                    "AudioDescriptions": [{"CodecSettings": {"Codec": "AAC", "AacSettings": {"Bitrate": 96000}}}],
+                    "ContainerSettings": {"Container": "M3U8"}
+                },
+                # 480p tier (important for Nigerian bandwidth!)
+                {
+                    "NameModifier": "_480p",
+                    "VideoDescription": {
+                        "Width": 854, "Height": 480,
+                        "CodecSettings": {
+                            "Codec": "H_264",
+                            "H264Settings": {
+                                "Bitrate": 800000,
+                                "RateControlMode": "CBR"
+                            }
+                        }
+                    },
+                    "AudioDescriptions": [{"CodecSettings": {"Codec": "AAC", "AacSettings": {"Bitrate": 64000}}}],
+                    "ContainerSettings": {"Container": "M3U8"}
+                },
+                # 360p tier (for very slow connections)
+                {
+                    "NameModifier": "_360p",
+                    "VideoDescription": {
+                        "Width": 640, "Height": 360,
+                        "CodecSettings": {
+                            "Codec": "H_264",
+                            "H264Settings": {
+                                "Bitrate": 400000,
+                                "RateControlMode": "CBR"
+                            }
+                        }
+                    },
+                    "AudioDescriptions": [{"CodecSettings": {"Codec": "AAC", "AacSettings": {"Bitrate": 64000}}}],
+                    "ContainerSettings": {"Container": "M3U8"}
+                }
+            ]
+        }]
+    }
+
+    response = mediaconvert.create_job(
+        Role=os.getenv('MEDIACONVERT_ROLE_ARN'),  # IAM role for MediaConvert
+        Settings=job_settings,
+        UserMetadata={"lesson_id": str(lesson_id)}
+    )
+    return response['Job']['Id']
+
 bp = Blueprint("courses", __name__)
 
 @bp.route("/generate-upload-url", methods=["POST"])
@@ -328,11 +434,11 @@ def confirm_upload():
     if file_type == 'video':
         # Delete old video if exists
         if lesson.s3_video_key and lesson.s3_video_key != file_key:
-            print(f"🗑️ Deleting old video: {lesson.s3_video_key}")
             delete_from_s3(lesson.s3_video_key)
         
         lesson.s3_video_key = file_key
         lesson.video_url = file_url
+        lesson.transcode_status = "pending"
         
         # Update duration if provided
         if duration:
@@ -342,6 +448,13 @@ def confirm_upload():
         if size:
             lesson.size = size
             
+        try:
+            job_id = trigger_hls_transcode(file_key, lesson.id)
+            lesson.transcode_job_id = job_id 
+            print(f"🎬 Transcoding job started: {job_id}")
+        except Exception as e:
+            print(f"⚠️ Transcoding failed to start: {e}")
+
     elif file_type == 'document':
         # Delete old document if exists
         if lesson.s3_document_key and lesson.s3_document_key != file_key:
@@ -365,6 +478,55 @@ def confirm_upload():
             "size": format_size(lesson.size) if lesson.size else "0 KB"
         }
     }), 200
+
+@bp.route("/mediaconvert-webhook", methods=["POST"])
+def mediaconvert_webhook():
+    """AWS EventBridge/SNS calls this when transcoding is done"""
+    
+    # ✅ Handle SNS subscription confirmation (required first step)
+    sns_message_type = request.headers.get('x-amz-sns-message-type', '')
+    
+    if sns_message_type == 'SubscriptionConfirmation':
+        data = request.get_json(force=True)
+        subscribe_url = data.get('SubscribeURL')
+        if subscribe_url:
+            import urllib.request
+            urllib.request.urlopen(subscribe_url)  # Confirm subscription
+            print("✅ SNS subscription confirmed")
+        return jsonify({"confirmed": True}), 200
+    
+    # ✅ Handle actual MediaConvert job notification
+    if sns_message_type == 'Notification':
+        wrapper = request.get_json(force=True)
+        data = json.loads(wrapper.get('Message', '{}'))  # SNS wraps the actual message
+    else:
+        data = request.get_json(force=True)  # Direct EventBridge (no SNS wrapper)
+
+    if not data:
+        return jsonify({"error": "No data"}), 400
+
+    status = data.get('detail', {}).get('status')
+    user_metadata = data.get('detail', {}).get('userMetadata', {})
+    lesson_id = user_metadata.get('lesson_id')
+
+    if not lesson_id:
+        return jsonify({"received": True}), 200
+
+    lesson = Lesson.query.get(lesson_id)
+    if not lesson:
+        return jsonify({"error": "Lesson not found"}), 404
+
+    if status == 'COMPLETE':
+        lesson.hls_key = f"hls/lesson_{lesson_id}/index.m3u8"
+        lesson.transcode_status = "complete"
+        print(f"✅ Lesson {lesson_id} HLS ready")
+
+    elif status == 'ERROR':
+        lesson.transcode_status = "failed"
+        print(f"❌ Lesson {lesson_id} transcoding failed")
+
+    db.session.commit()
+    return jsonify({"received": True}), 200
 
 # List all published courses
 @bp.route("/", methods=["GET"])
@@ -566,6 +728,8 @@ def get_full_course(course_id):
         "sections": []
     }
 
+    cloudfront_domain = os.getenv('CLOUDFRONT_DOMAIN')
+
     for section in course.sections:
         section_data = {
             "id": section.id,
@@ -590,12 +754,16 @@ def get_full_course(course_id):
 
             # ✅ Only show video/document URLs if user has access (paid or admin)
             if has_access:
-                if lesson.s3_video_key:
-                    # Generate presigned URL for S3 videos
-                    presigned_url = generate_presigned_url(lesson.s3_video_key, expiration=7200)
-                    lesson_data["video_url"] = presigned_url
+                if lesson.hls_key and lesson.transcode_status == "complete":
+                    # Serve HLS playlist via CloudFront (no presigned needed if CF is configured)
+                    lesson_data["video_url"] = f"https://{cloudfront_domain}/{lesson.hls_key}"
+                    lesson_data["video_type"] = "application/x-mpegURL"  # Tell frontend it's HLS
+                elif lesson.s3_video_key:
+                    # Fallback to raw video while transcoding or if HLS failed
+                    lesson_data["video_url"] = generate_presigned_url(lesson.s3_video_key, expiration=7200)
+                    lesson_data["video_type"] = "video/mp4"
                 else:
-                    lesson_data["video_url"] = lesson.video_url
+                    lesson_data["video_url"] = None
                 
                 if lesson.s3_document_key:
                     # Generate presigned URL for S3 documents
@@ -1027,13 +1195,19 @@ def get_lesson_details(lesson_id):
         "quizzes": []
     }
 
-    # ✅ Show video/document URLs if user has access (paid or admin)
+    # Show video/document URLs if user has access (paid or admin)
+    cloudfront_domain = os.getenv('CLOUDFRONT_DOMAIN')
     if has_access:
-        if lesson.s3_video_key:
-            presigned_url = generate_presigned_url(lesson.s3_video_key, expiration=7200)
-            lesson_data["video_url"] = presigned_url
+        if lesson.hls_key and lesson.transcode_status == "complete":
+        # Serve HLS playlist via CloudFront (no presigned needed if CF is configured)
+            lesson_data["video_url"] = f"https://{cloudfront_domain}/{lesson.hls_key}"
+            lesson_data["video_type"] = "application/x-mpegURL"  # Tell frontend it's HLS
+        elif lesson.s3_video_key:
+        # Fallback to raw video while transcoding or if HLS failed
+            lesson_data["video_url"] = generate_presigned_url(lesson.s3_video_key, expiration=7200)
+            lesson_data["video_type"] = "video/mp4"
         else:
-            lesson_data["video_url"] = lesson.video_url
+            lesson_data["video_url"] = None
         
         if lesson.s3_document_key:
             presigned_url = generate_presigned_url(lesson.s3_document_key, expiration=7200)

@@ -19,6 +19,9 @@ class Lesson(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     s3_video_key = db.Column(db.String(500))
     s3_document_key = db.Column(db.String(500))
+    hls_key = db.Column(db.String(500), nullable=True)
+    transcode_status = db.Column(db.String(50), default="none")  # none/pending/complete/failed
+    transcode_job_id = db.Column(db.String(200), nullable=True)
 
     section_id = db.Column(db.Integer, db.ForeignKey("sections.id"), nullable=False)
     section = db.relationship("Section", back_populates="lessons")

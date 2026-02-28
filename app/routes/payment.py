@@ -114,7 +114,6 @@ def initiate_payment():
         }
     }
 
-    # ✅ Add channels ONLY for USD payments
     if currency == "USD":
         payload["channels"] = ["card"]
 
