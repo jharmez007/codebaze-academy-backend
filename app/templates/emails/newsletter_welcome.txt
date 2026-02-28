@@ -1,0 +1,15 @@
+Welcome to CodeBaze, {{ name }}!
+
+You're now subscribed to the CodeBaze newsletter.
+
+You'll be the first to know about:
+- New courses and learning paths
+- Coding tips and tutorials  
+- Exclusive discounts and offers
+- Industry news and career advice
+
+Browse our courses: https://yourwebsite.com/courses
+
+---
+© 2025 CodeBaze. All rights reserved.
+You're receiving this because you subscribed at codebaze.com

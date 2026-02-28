@@ -1,11 +1,13 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, render_template
 import requests
+import re
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models.user import ExchangeRate, NewsletterSubscriber
 from app.models import User, Course, Enrollment
 from app.models.coupon import Coupon
 from app.models.comment import ReportedComment
 from app.models.user import Payment
+from app.utils.mailer import send_email
 from sqlalchemy import func, extract
 from datetime import datetime
 from app.extensions import db
@@ -191,32 +193,60 @@ def debug_currency():
         "final_detected_currency": detected
     }
 
+def is_valid_email(email: str) -> bool:
+    pattern = r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
+
+
 @bp.route("/newsletter/subscribe", methods=["POST"])
 def subscribe_newsletter():
     data = request.get_json()
-    name = data.get("name", "").strip()
+
+    if not data:
+        return jsonify({"error": "Invalid request body"}), 400
+
+    name  = data.get("name", "").strip()
     email = data.get("email", "").strip().lower()
 
-    # Validation
+    # ── Validation ───────────────────────────────────────────
     if not name or not email:
         return jsonify({"error": "Name and email are required"}), 400
 
-    # Check if already subscribed
+    if len(name) < 2:
+        return jsonify({"error": "Please enter a valid name"}), 400
+
+    if not is_valid_email(email):
+        return jsonify({"error": "Please enter a valid email address"}), 400
+
+    # ── Duplicate check ──────────────────────────────────────
     existing = NewsletterSubscriber.query.filter_by(email=email).first()
     if existing:
         return jsonify({
-            "message": "Already subscribed",
-            "name": existing.name,
-            "email": existing.email
-        }), 200
+            "error": "This email is already subscribed to our newsletter"
+        }), 409
 
-    # Save new subscriber
-    subscriber = NewsletterSubscriber(name=name, email=email)
-    db.session.add(subscriber)
-    db.session.commit()
+    # ── Save subscriber ──────────────────────────────────────
+    try:
+        subscriber = NewsletterSubscriber(name=name, email=email)
+        db.session.add(subscriber)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ DB error saving subscriber: {e}")
+        return jsonify({"error": "Subscription failed, please try again"}), 500
+
+    # ── Send welcome email ───────────────────────────────────
+    try:
+        subject    = "Welcome to CodeBaze Newsletter! 🎉"
+        text_body  = render_template("emails/newsletter_welcome.txt", name=name)
+        html_body  = render_template("emails/newsletter_welcome.html", name=name)
+        send_email(to=email, subject=subject, body=text_body, html=html_body)
+    except Exception as e:
+        # Email failure never breaks the subscription
+        print(f"⚠️ Welcome email failed for {email}: {e}")
 
     return jsonify({
-        "message": "Subscription successful",
+        "message": "Subscription successful! Check your email for a welcome message.",
         "subscriber": {
             "id": subscriber.id,
             "name": subscriber.name,
